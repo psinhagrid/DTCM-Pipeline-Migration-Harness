@@ -1,8 +1,8 @@
 import asyncio
 
 from event_queue import push
-from agents.assess_agent   import run_assessment
-from agents.convert_agent  import run_conversion
+from agents.assess_subagent import run_assessment
+from agents.convert_subagent import run_conversion
 from agents.reconcile_agent import run_reconciliation
 from agents.deploy_agent   import run_deployment
 
@@ -26,7 +26,7 @@ async def run_pipeline(pipeline_name: str = DEFAULT_PIPELINE) -> dict | None:
     await _sup("Hook PreToolUse → visa_governance ✓ allowed", type="hook")
 
     # ── assess_agent ──────────────────────────────────────────────────────────
-    await _sup("Delegating to assess_agent", type="delegation", target="assess_agent")
+    await _sup("Delegating to assess_subagent", type="delegation", target="assess_subagent")
     metadata = await run_assessment(pipeline_name)
     results[pipeline_name] = metadata
 
