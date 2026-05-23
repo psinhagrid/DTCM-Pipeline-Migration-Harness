@@ -15,6 +15,7 @@ import os
 import anthropic
 
 from event_queue import push
+from event_queue import claude_with_retry
 from .tools import (
     analyze_file_tool,
     validate_pyspark_tool,
@@ -22,6 +23,7 @@ from .tools import (
     runtime_validation_tool,
     compile_report_tool,
     read_skill_tool,
+    query_graph_tool,
     finish_reconciliation_tool,
 )
 
@@ -143,6 +145,22 @@ TOOLS = [
         },
     },
     {
+        "name": "query_graph_tool",
+        "description": (
+            "Query the Neo4j lineage graph for context about this pipeline. "
+            "Call when you need blast radius, wave order, or upstream/downstream context. "
+            "query options: 'summary' | 'downstream' | 'upstream' | 'blast_radius' | 'wave'"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pipeline": {"type": "string"},
+                "query":    {"type": "string", "enum": ["summary","downstream","upstream","blast_radius","wave"]},
+            },
+            "required": ["pipeline", "query"],
+        },
+    },
+    {
         "name": "finish_reconciliation_tool",
         "description": (
             "Signal that reconciliation is complete. Always call this as your final action — "
@@ -204,6 +222,13 @@ async def _execute_tool(name: str, args: dict) -> dict:
             args.get("all_issues", []),
         )
 
+    elif name == "query_graph_tool":
+        return await asyncio.to_thread(
+            query_graph_tool,
+            args["pipeline"],
+            args.get("query", "summary"),
+        )
+
     elif name == "finish_reconciliation_tool":
         return finish_reconciliation_tool(
             result=args.get("result", {}),
@@ -243,8 +268,8 @@ async def run_reconciliation(assessment: dict, conversion: dict) -> dict:
     while iterations < MAX_ITERATIONS:
         iterations += 1
 
-        response = await asyncio.to_thread(
-            client.messages.create,
+        response = await claude_with_retry(
+            client,
             model=MODEL,
             max_tokens=4096,
             system=_SYSTEM_PROMPT,

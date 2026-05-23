@@ -49,6 +49,8 @@ async def run(pipeline: str = "daily_revenue_agg"):
     return {"status": "started", "pipeline": pipeline}
 
 
+
+
 @app.get("/deployment/{pipeline}")
 def get_deployment(pipeline: str):
     if pipeline not in pipeline_deployments:
@@ -91,35 +93,10 @@ def get_reconcile(pipeline: str):
 
 @app.get("/graph")
 def get_graph():
-    """Query Neo4j for the full pipeline lineage graph."""
-    uri      = os.getenv("NEO4J_URI",      "bolt://localhost:7687")
-    user     = os.getenv("NEO4J_USER",     "neo4j")
-    password = os.getenv("NEO4J_PASSWORD", "dtcm_local")
+    """Query Neo4j for the full pipeline lineage graph via shared graph tool."""
+    from graph.client import query_all_pipelines
     try:
-        from neo4j import GraphDatabase
-        driver = GraphDatabase.driver(uri, auth=(user, password))
-        with driver.session() as session:
-            result = session.run("""
-                MATCH (p:Pipeline)
-                OPTIONAL MATCH (p)-[:READS]->(rt:Table)
-                OPTIONAL MATCH (p)-[:WRITES]->(wt:Table)
-                OPTIONAL MATCH (p)-[:USES_UDF]->(u:UDF)
-                OPTIONAL MATCH (p)-[:DEPENDS_ON]->(dep:Pipeline)
-                OPTIONAL MATCH (consumer:Pipeline)-[:DEPENDS_ON]->(p)
-                RETURN
-                  p.name              AS name,
-                  p.complexity        AS complexity,
-                  p.estimated_effort  AS estimated_effort,
-                  collect(DISTINCT rt.name)       AS reads,
-                  collect(DISTINCT wt.name)       AS writes,
-                  collect(DISTINCT u.name)        AS udfs,
-                  collect(DISTINCT dep.name)      AS depends_on,
-                  collect(DISTINCT consumer.name) AS consumed_by
-                ORDER BY p.name
-            """)
-            pipelines = [dict(r) for r in result]
-        driver.close()
-        return {"pipelines": pipelines, "error": None}
+        return {"pipelines": query_all_pipelines(), "error": None}
     except Exception as e:
         return {"pipelines": [], "error": str(e)}
 

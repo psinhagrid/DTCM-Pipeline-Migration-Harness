@@ -16,6 +16,7 @@ import os
 import anthropic
 
 from event_queue import push
+from event_queue import claude_with_retry
 from .tools import (
     validate_artifacts_tool,
     generate_cicd_tool,
@@ -24,6 +25,7 @@ from .tools import (
     compute_governance_tool,
     write_manifests_tool,
     read_skill_tool,
+    query_graph_tool,
     finish_deployment_tool,
 )
 
@@ -160,6 +162,22 @@ TOOLS = [
         },
     },
     {
+        "name": "query_graph_tool",
+        "description": (
+            "Query the Neo4j lineage graph for context about this pipeline. "
+            "Call to check upstream migration status, blast radius, or wave order. "
+            "query options: 'summary' | 'downstream' | 'upstream' | 'blast_radius' | 'wave'"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pipeline": {"type": "string"},
+                "query":    {"type": "string", "enum": ["summary","downstream","upstream","blast_radius","wave"]},
+            },
+            "required": ["pipeline", "query"],
+        },
+    },
+    {
         "name": "finish_deployment_tool",
         "description": (
             "Signal that deployment orchestration is complete. Always call this as your final action — "
@@ -233,6 +251,13 @@ async def _execute_tool(name: str, args: dict) -> dict:
             args["cicd_yaml"],
         )
 
+    elif name == "query_graph_tool":
+        return await asyncio.to_thread(
+            query_graph_tool,
+            args["pipeline"],
+            args.get("query", "summary"),
+        )
+
     elif name == "finish_deployment_tool":
         return finish_deployment_tool(
             result=args.get("result", {}),
@@ -273,8 +298,8 @@ async def run_deployment(assessment: dict, conversion: dict, reconcile: dict) ->
     while iterations < MAX_ITERATIONS:
         iterations += 1
 
-        response = await asyncio.to_thread(
-            client.messages.create,
+        response = await claude_with_retry(
+            client,
             model=MODEL,
             max_tokens=4096,
             system=_SYSTEM_PROMPT,

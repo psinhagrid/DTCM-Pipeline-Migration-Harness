@@ -1,19 +1,29 @@
 import yaml
 from pathlib import Path
 
-_SKILLS_DIR = Path(__file__).parents[1] / "skills"
+_LOCAL_SKILLS_DIR  = Path(__file__).parents[1] / "skills"
+_SHARED_SKILLS_DIR = Path(__file__).parents[3] / "skills"
 
 
 def read_skill_tool(name: str) -> dict:
     """
     Read full instructions for a named skill.
-    Called by the agent when it decides to use a skill.
+    Checks agent-local skills first, falls back to shared skills/ at project root.
     Returns name, description, and full instruction text.
     """
-    path = _SKILLS_DIR / f"{name}.md"
+    # Local first (agent-specific), then shared (cross-agent)
+    path = _LOCAL_SKILLS_DIR / f"{name}.md"
     if not path.exists():
-        available = [p.stem for p in sorted(_SKILLS_DIR.glob("*.md"))]
-        return {"error": f"Skill '{name}' not found", "available_skills": available}
+        path = _SHARED_SKILLS_DIR / f"{name}.md"
+
+    if not path.exists():
+        local   = [p.stem for p in sorted(_LOCAL_SKILLS_DIR.glob("*.md"))]
+        shared  = [p.stem for p in sorted(_SHARED_SKILLS_DIR.glob("*.md"))]
+        return {
+            "error":            f"Skill '{name}' not found",
+            "available_local":  local,
+            "available_shared": shared,
+        }
 
     text = path.read_text(encoding="utf-8")
     meta: dict = {}

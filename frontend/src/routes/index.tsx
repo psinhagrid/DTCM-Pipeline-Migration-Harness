@@ -13,6 +13,8 @@ function Dashboard() {
   const [results,   setResults]   = useState<Record<string, any>>({});
   const [running,   setRunning]   = useState<string | null>(null);
   const [phase,     setPhase]     = useState<string>("");
+  const [runningAll,  setRunningAll]  = useState(false);
+  const [allProgress, setAllProgress] = useState<{ current: string; index: number; total: number } | null>(null);
 
   useEffect(() => {
     fetch("/pipelines")
@@ -60,6 +62,77 @@ function Dashboard() {
     setTimeout(() => { clearInterval(poll); setRunning(null); setPhase(""); }, 900_000);
   }
 
+  async function runAllInOrder() {
+    if (!pipelines.length || runningAll) return;
+    setRunningAll(true);
+
+    // Fetch graph to compute wave order
+    let waveGroups: string[][] = [pipelines]; // fallback: all in one wave
+    try {
+      const graph = await fetch("/graph").then((r) => r.json());
+      const gPipelines: { name: string; depends_on: string[] }[] = graph.pipelines ?? [];
+      if (gPipelines.length > 0) {
+        const tiers = new Map<string, number>();
+        const nameSet = new Set(gPipelines.map((p: any) => p.name));
+        for (const p of gPipelines) {
+          if (p.depends_on.filter((d: string) => nameSet.has(d)).length === 0) tiers.set(p.name, 0);
+        }
+        let changed = true;
+        while (changed) {
+          changed = false;
+          for (const p of gPipelines) {
+            if (tiers.has(p.name)) continue;
+            const deps = p.depends_on.filter((d: string) => nameSet.has(d));
+            if (deps.every((d: string) => tiers.has(d))) {
+              tiers.set(p.name, Math.max(...deps.map((d: string) => tiers.get(d)!)) + 1);
+              changed = true;
+            }
+          }
+        }
+        for (const p of gPipelines) { if (!tiers.has(p.name)) tiers.set(p.name, 0); }
+        const maxTier = Math.max(...[...tiers.values()]);
+        waveGroups = Array.from({ length: maxTier + 1 }, (_, i) =>
+          [...tiers.entries()].filter(([, t]) => t === i).map(([n]) => n).filter(n => pipelines.includes(n))
+        ).filter(g => g.length > 0);
+      }
+    } catch { /* use fallback */ }
+
+    for (let wi = 0; wi < waveGroups.length; wi++) {
+      const wave = waveGroups[wi];
+      setAllProgress({ current: `Wave ${wi + 1}/${waveGroups.length}: ${wave.join(", ")}`, index: wi + 1, total: waveGroups.length });
+
+      // Start all pipelines in this wave simultaneously
+      await Promise.all(wave.map(async (p) => {
+        setRunning(p);
+        setPhase("Starting…");
+        await fetch(`/run?pipeline=${encodeURIComponent(p)}`, { method: "POST" });
+
+        await new Promise<void>((resolve) => {
+          let phaseIdx = 0;
+          const poll = setInterval(async () => {
+            setPhase(PHASES[Math.min(phaseIdx, PHASES.length - 1)] + "…");
+            phaseIdx++;
+            const dep = await fetch(`/deployment/${encodeURIComponent(p)}`)
+              .then((r) => r.ok ? r.json() : null).catch(() => null);
+            if (dep) {
+              const res = await fetch(`/result/${encodeURIComponent(p)}`)
+                .then((r) => r.ok ? r.json() : null).catch(() => null);
+              if (res) setResults((prev) => ({ ...prev, [p]: res }));
+              setRunning(null);
+              setPhase("");
+              clearInterval(poll);
+              resolve();
+            }
+          }, 8000);
+          setTimeout(() => { clearInterval(poll); setRunning(null); setPhase(""); resolve(); }, 900_000);
+        });
+      }));
+    }
+
+    setRunningAll(false);
+    setAllProgress(null);
+  }
+
   return (
     <AppShell>
       <div className="h-full overflow-y-auto bg-background p-8 space-y-8">
@@ -82,6 +155,30 @@ function Dashboard() {
 
         {/* Pipeline list */}
         <Panel eyebrow="Pipelines" title="Available for migration">
+          {/* Toolbar — bulk action + wave progress */}
+          <div className="flex items-center justify-between px-6 py-3 border-b border-border bg-surface-2/40">
+            <span className="text-[13px] text-muted-foreground font-mono">
+              {runningAll && allProgress
+                ? <><RefreshCw className="inline h-3.5 w-3.5 animate-spin mr-1.5 text-primary" />{allProgress.current}</>
+                : `${pipelines.length} pipeline${pipelines.length !== 1 ? "s" : ""}`}
+            </span>
+            <button
+              onClick={runAllInOrder}
+              disabled={!!running || runningAll}
+              className={`inline-flex items-center gap-2 h-8 px-4 rounded-md text-[13px] font-medium transition ${
+                runningAll
+                  ? "bg-primary/10 text-primary border border-primary/30 cursor-not-allowed"
+                  : running
+                  ? "bg-gray-100 text-gray-400 border border-border cursor-not-allowed"
+                  : "bg-primary text-white hover:bg-primary/90"
+              }`}
+            >
+              {runningAll
+                ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Running…</>
+                : <><Play className="h-3.5 w-3.5" /> Run All</>}
+            </button>
+          </div>
+
           {pipelines.length === 0 ? (
             <div className="p-8 text-center text-[15px] text-muted-foreground">
               No pipelines found — add folders to <code className="bg-surface-2 px-1.5 py-0.5 rounded text-[14px]">pipelines/</code>

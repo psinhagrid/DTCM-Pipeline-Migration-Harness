@@ -60,6 +60,14 @@ def _write_graph(
     udfs: list[str],
     downstream: list[str],
 ) -> None:
+    # Only delete READS/WRITES/USES_UDF — relationships this pipeline owns.
+    # Do NOT delete DEPENDS_ON (those are created by upstream pipelines and
+    # deleting them here causes a race condition in parallel builds).
+    tx.run("""
+        MATCH (p:Pipeline {name: $name})
+        OPTIONAL MATCH (p)-[r:READS|WRITES|USES_UDF]->() DELETE r
+    """, name=pipeline)
+
     # Upsert Pipeline node
     tx.run("""
         MERGE (p:Pipeline {name: $name})
@@ -97,7 +105,7 @@ def _write_graph(
             MERGE (p)-[:USES_UDF]->(u)
         """, udf=udf, pipeline=pipeline)
 
-    # Downstream consumers
+    # Downstream consumers (other pipelines that read this pipeline's output tables)
     for consumer in downstream:
         tx.run("""
             MERGE (c:Pipeline {name: $consumer})

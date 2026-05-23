@@ -16,7 +16,7 @@ SELECT
         ELSE                           'MICRO'
     END                                            AS value_band,
     s.settlement_ref
-FROM raw_transactions t
+FROM raw.transactions t
 LEFT JOIN settlement_refs s
     ON t.txn_id = s.txn_id
 WHERE t.dt = '${hiveconf:run_date}'

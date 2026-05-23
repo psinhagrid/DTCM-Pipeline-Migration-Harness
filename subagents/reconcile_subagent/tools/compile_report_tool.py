@@ -1,3 +1,9 @@
+import sys
+from pathlib import Path
+_ROOT = Path(__file__).parents[4]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 from ..utils.validators import (
     calculate_confidence,
     overall_status,
@@ -56,7 +62,30 @@ def compile_report_tool(
     })
 
     confidence      = calculate_confidence(avg_similarity, runtime_checks)
-    val_status      = overall_status(confidence, flat_checks)
+
+    # Mechanical blast radius threshold — not LLM decision
+    blast_radius = []
+    try:
+        from graph.client import query_blast_radius
+        blast_radius = query_blast_radius(pipeline)
+    except Exception:
+        pass
+
+    blast_count = len(blast_radius)
+    if blast_count == 0:
+        proceed_threshold = 0.75      # terminal sink — nothing downstream
+    elif blast_count <= 2:
+        proceed_threshold = 0.75      # standard
+    elif blast_count <= 4:
+        proceed_threshold = 0.80      # raised — 3-4 downstream consumers
+    else:
+        proceed_threshold = 0.85      # high impact — 5+ downstream consumers
+
+    # Convert proceed_threshold to overall_status threshold
+    # overall_status uses a single threshold; scale it proportionally
+    status_threshold = 0.88 * (proceed_threshold / 0.75)
+
+    val_status      = overall_status(confidence, flat_checks, threshold=status_threshold)
     severity_map    = compute_severity_map(flat_checks)
     migration_risk, risk_score = compute_migration_risk(severity_map)
 
@@ -100,6 +129,19 @@ def compile_report_tool(
         "reasoning":            reasoning,
         "semantic_breakdown":   semantic_breakdown,
         "speedup_factor":       cr.get("speedup_factor", 1.0),
+        "blast_radius":      blast_radius,
+        "blast_radius_count": blast_count,
+        "threshold_applied":  round(proceed_threshold, 2),
+        "data_provenance": {
+            "semantic_analysis": "REAL — static regex comparison of HiveQL vs PySpark across 8 dimensions",
+            "pyspark_validation": "REAL — ast.parse() syntax check + import/write operation checks",
+            "workflow_parity":    "REAL — DAG task count vs DML file count",
+            "row_count":          "SIMULATED — seeded from pipeline name, not real Hive/Iceberg execution",
+            "checksum":           "SIMULATED — deterministic fake SHA-256, not real partition data",
+            "sla_compliance":     "SIMULATED — always passes, real timing not implemented",
+            "consumer_replay":    "SIMULATED — seeded from pipeline name, not real query execution",
+            "confidence_score":   "80% real semantic analysis + 20% simulated runtime checks",
+        },
         "summary": (
             f"Pipeline {pipeline}: {val_status}  "
             f"confidence={confidence:.0%}  "

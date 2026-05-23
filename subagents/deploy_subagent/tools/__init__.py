@@ -5,6 +5,7 @@ from .run_smoke_tests_tool     import run_smoke_tests_tool
 from .compute_governance_tool  import compute_governance_tool
 from .write_manifests_tool     import write_manifests_tool
 from .read_skill_tool          import read_skill_tool
+from .query_graph_tool         import query_graph_tool
 from .finish_deployment_tool   import finish_deployment_tool
 
 __all__ = [
@@ -15,5 +16,6 @@ __all__ = [
     "compute_governance_tool",
     "write_manifests_tool",
     "read_skill_tool",
+    "query_graph_tool",
     "finish_deployment_tool",
 ]

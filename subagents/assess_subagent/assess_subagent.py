@@ -15,12 +15,14 @@ import os
 import anthropic
 
 from event_queue import push
+from event_queue import claude_with_retry
 from .tools import (
     scan_repo_tool,
     parse_hql_tool,
     lineage_extract_tool,
     classify_complexity_tool,
     neo4j_write_graph_tool,
+    query_graph_tool,
     read_skill_tool,
     finish_assessment_tool,
 )
@@ -167,6 +169,27 @@ TOOLS = [
         },
     },
     {
+        "name": "query_graph_tool",
+        "description": (
+            "Query the Neo4j lineage graph for context about this pipeline. "
+            "Call after lineage_extract_tool to enrich with graph data if available. "
+            "Returns empty if graph not yet built — treat gracefully and proceed. "
+            "query options: 'summary' | 'downstream' | 'upstream' | 'blast_radius' | 'wave'"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pipeline": {"type": "string", "description": "Pipeline name to query"},
+                "query":    {
+                    "type": "string",
+                    "enum": ["summary", "downstream", "upstream", "blast_radius", "wave"],
+                    "description": "What to query",
+                },
+            },
+            "required": ["pipeline", "query"],
+        },
+    },
+    {
         "name": "finish_assessment_tool",
         "description": (
             "Signal that assessment is complete. Always call this as your final action — "
@@ -236,6 +259,13 @@ async def _execute_tool(name: str, args: dict, pipeline_dir: Path) -> dict:
             args.get("downstream",    []),
         )
 
+    elif name == "query_graph_tool":
+        return await asyncio.to_thread(
+            query_graph_tool,
+            args["pipeline"],
+            args.get("query", "summary"),
+        )
+
     elif name == "neo4j_write_graph_tool":
         result = neo4j_write_graph_tool(
             pipeline=pipeline_dir.name,
@@ -290,8 +320,8 @@ async def run_assessment(pipeline_name: str) -> dict:
     while iterations < MAX_ITERATIONS:
         iterations += 1
 
-        response = await asyncio.to_thread(
-            client.messages.create,
+        response = await claude_with_retry(
+            client,
             model=MODEL,
             max_tokens=4096,
             system=_SYSTEM_PROMPT,
@@ -365,7 +395,8 @@ def _fmt_result(tool_name: str, result: dict) -> str:
         "parse_hql_tool":           lambda r: f"✓ {r.get('file')}: {len(r.get('all_tables', []))} tables, {len(r.get('udfs', []))} UDFs",
         "lineage_extract_tool":     lambda r: f"✓ {len(r.get('upstream', []))} upstream, {len(r.get('downstream', []))} downstream",
         "classify_complexity_tool": lambda r: f"✓ Score {r.get('score')} → {r.get('complexity')} ({r.get('estimated_effort')})",
-        "neo4j_write_graph_tool":   lambda r: f"✓ Graph: {r.get('status')}",
+        "neo4j_write_graph_tool":   lambda r: f"✓ Graph: {r.get('status')} ({r.get('nodes', 0)} nodes, {r.get('edges', 0)} edges)",
+        "query_graph_tool":         lambda r: f"✓ Graph query: wave={r.get('migration_wave', r.get('complexity', '?'))} blast_radius={len(r.get('blast_radius', []))}",
         "read_skill_tool":          lambda r: f"✓ Loaded skill: {r.get('name')}",
     }
     fn = summaries.get(tool_name)

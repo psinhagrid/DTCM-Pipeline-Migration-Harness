@@ -18,11 +18,13 @@ from pathlib import Path
 import anthropic
 
 from event_queue import push
+from event_queue import claude_with_retry
 from subagents.assess_subagent    import run_assessment
 from subagents.convert_subagent   import run_conversion
 from subagents.reconcile_subagent import run_reconciliation
 from subagents.deploy_subagent    import run_deployment
-from .tools import finish_migration_tool
+from .tools import finish_migration_tool, query_graph_tool
+from graph.client import query_blast_radius
 
 NAME           = "supervisor"
 MAX_ITERATIONS = 20
@@ -97,6 +99,23 @@ TOOLS = [
         },
     },
     {
+        "name": "query_graph",
+        "description": (
+            "Query the Neo4j lineage graph before or after delegating to a subagent. "
+            "Use to determine migration wave ordering, blast radius priority, "
+            "or check which pipelines have been assessed. "
+            "query options: 'summary' | 'downstream' | 'upstream' | 'blast_radius' | 'wave'"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pipeline": {"type": "string"},
+                "query":    {"type": "string", "enum": ["summary","downstream","upstream","blast_radius","wave"]},
+            },
+            "required": ["pipeline", "query"],
+        },
+    },
+    {
         "name": "finish_migration",
         "description": (
             "Signal that the migration workflow is complete. "
@@ -134,12 +153,22 @@ async def _execute_tool(name: str, args: dict, context: dict, pipeline: str) -> 
     if name == "run_assessment":
         result = await run_assessment(args["pipeline"])
         context["assessment"] = result
+
+        # Auto-enrich with blast radius — mechanical, not LLM decision
+        blast_radius = []
+        try:
+            blast_radius = await asyncio.to_thread(query_blast_radius, args["pipeline"])
+        except Exception:
+            pass
+        context["blast_radius"] = blast_radius
+
         return _summarise("assessment", result, [
             f"complexity={result.get('complexity')}",
             f"tables={result.get('tables')}",
             f"udfs={result.get('udfs')}",
             f"syntax_errors={result.get('syntax_errors')}",
             f"effort={result.get('estimated_effort')}",
+            f"blast_radius={len(blast_radius)} pipeline(s) affected if this fails",
         ])
 
     elif name == "run_conversion":
@@ -177,6 +206,13 @@ async def _execute_tool(name: str, args: dict, context: dict, pipeline: str) -> 
             f"readiness_score={result.get('readiness_score')}%",
             f"smoke={smoke.get('passed')}/{smoke.get('total')}",
         ])
+
+    elif name == "query_graph":
+        return await asyncio.to_thread(
+            query_graph_tool,
+            args["pipeline"],
+            args.get("query", "summary"),
+        )
 
     elif name == "finish_migration":
         result = finish_migration_tool(
@@ -216,8 +252,8 @@ async def run_migration(pipeline_name: str) -> dict:
     while iterations < MAX_ITERATIONS:
         iterations += 1
 
-        response = await asyncio.to_thread(
-            client.messages.create,
+        response = await claude_with_retry(
+            client,
             model=MODEL,
             max_tokens=1024,
             system=_SYSTEM_PROMPT,

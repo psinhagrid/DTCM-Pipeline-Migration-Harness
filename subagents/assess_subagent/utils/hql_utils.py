@@ -181,16 +181,31 @@ def parse_file(path: Path) -> dict:
 
 def discover_downstream(output_tables: set[str], pipeline_dir: Path) -> list[str]:
     """
-    Grep sibling pipeline directories for references to our output tables.
-    TODO: replace with Neo4j lineage query or data catalog API.
+    Find sibling pipelines that read this pipeline's output tables.
+    Matches only FROM/JOIN references (not substrings) after stripping SQL comments.
+    This prevents false positives from column names, comments, or partial matches.
     """
+    if not output_tables:
+        return []
+
+    # Require table name to appear directly after FROM or JOIN keyword.
+    # re.escape handles dots (raw.events → raw\.events).
+    # Backticks optional. Word boundary prevents partial matches (raw.events vs raw.events_v2).
+    patterns = [
+        re.compile(
+            r'\b(?:FROM|JOIN)\s+`?' + re.escape(tbl) + r'`?\b',
+            re.I,
+        )
+        for tbl in output_tables
+    ]
+
     consumers = []
     for sibling in pipeline_dir.parent.iterdir():
         if sibling == pipeline_dir or not sibling.is_dir():
             continue
         for hql in sibling.glob("*.hql"):
-            text = hql.read_text(encoding="utf-8").lower()
-            if any(tbl in text for tbl in output_tables):
+            sql = strip_comments(hql.read_text(encoding="utf-8"))
+            if any(p.search(sql) for p in patterns):
                 consumers.append(sibling.name)
                 break
     return consumers

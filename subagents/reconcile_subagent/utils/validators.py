@@ -162,8 +162,8 @@ def consumer_replay_check(pipeline: str, complexity: str, semantic_score: float 
 def calculate_confidence(semantic_score: float, runtime_checks: dict) -> float:
     """
     Weighted confidence blend.
-    Static analysis (real) = 55% of total.
-    Simulated runtime checks = 45%.
+    Static analysis (real) = 80% of total.
+    Simulated runtime checks = 20%.
     """
     weights = {
         "row_count":       0.20,
@@ -175,15 +175,15 @@ def calculate_confidence(semantic_score: float, runtime_checks: dict) -> float:
         runtime_checks.get(k, {}).get("score", 0.0) * w
         for k, w in weights.items()
     )
-    return round(semantic_score * 0.55 + runtime_score, 3)
+    return round(semantic_score * 0.80 + runtime_score * 0.20, 3)
 
 
-def overall_status(confidence: float, flat_checks: dict) -> str:
+def overall_status(confidence: float, flat_checks: dict, threshold: float = 0.88) -> str:
     failed  = [k for k, v in flat_checks.items() if v == "FAILED"]
     warning = [k for k, v in flat_checks.items() if v == "WARNING"]
     if failed:
         return "FAILED"
-    if confidence >= 0.88:
+    if confidence >= threshold:
         return "PASSED"
     if warning or confidence >= 0.70:
         return "PARTIAL"

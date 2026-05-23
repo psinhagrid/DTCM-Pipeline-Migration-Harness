@@ -15,6 +15,7 @@ import os
 import anthropic
 
 from event_queue import push
+from event_queue import claude_with_retry
 from .tools import (
     list_hql_files_tool,
     transform_hql_tool,
@@ -22,6 +23,7 @@ from .tools import (
     controlm_export_tool,
     s3_upload_tool,
     read_skill_tool,
+    query_graph_tool,
     finish_conversion_tool,
 )
 
@@ -136,6 +138,22 @@ TOOLS = [
         },
     },
     {
+        "name": "query_graph_tool",
+        "description": (
+            "Query the Neo4j lineage graph for context about this pipeline. "
+            "Call when you need blast radius, wave order, or upstream/downstream context. "
+            "query options: 'summary' | 'downstream' | 'upstream' | 'blast_radius' | 'wave'"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pipeline": {"type": "string"},
+                "query":    {"type": "string", "enum": ["summary","downstream","upstream","blast_radius","wave"]},
+            },
+            "required": ["pipeline", "query"],
+        },
+    },
+    {
         "name": "finish_conversion_tool",
         "description": (
             "Signal that conversion is complete. Always call this as your final action — "
@@ -186,6 +204,13 @@ async def _execute_tool(name: str, args: dict) -> dict:
         s3_upload_tool(args["artifact_path"], args["files"])
         return {"status": "ok", "note": "stubbed — TODO: boto3"}
 
+    elif name == "query_graph_tool":
+        return await asyncio.to_thread(
+            query_graph_tool,
+            args["pipeline"],
+            args.get("query", "summary"),
+        )
+
     elif name == "finish_conversion_tool":
         return finish_conversion_tool(
             result=args.get("result", {}),
@@ -224,8 +249,8 @@ async def run_conversion(assessment: dict) -> dict:
     while iterations < MAX_ITERATIONS:
         iterations += 1
 
-        response = await asyncio.to_thread(
-            client.messages.create,
+        response = await claude_with_retry(
+            client,
             model=MODEL,
             max_tokens=4096,
             system=_SYSTEM_PROMPT,

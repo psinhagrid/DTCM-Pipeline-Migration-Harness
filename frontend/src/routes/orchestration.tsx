@@ -1,15 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell, Badge } from "@/components/AppShell";
 import { useEffect, useRef, useState } from "react";
-import { Play, Pause, Trash2, Cpu } from "lucide-react";
+import { Play, Pause, Trash2, Cpu, List } from "lucide-react";
 import { onReset } from "@/lib/reset-store";
 
 export const Route = createFileRoute("/orchestration")({ component: OrchestrationConsole });
 
-// Module-level store — persists across tab switches (component unmount/remount)
-let _persistedEvents: Event[] = [];
+let _persistedEvents: AgentEvent[] = [];
 
-interface Event {
+interface AgentEvent {
   type: string;
   agent: string;
   message: string;
@@ -20,45 +19,40 @@ interface Event {
 }
 
 const agentColor: Record<string, string> = {
-  supervisor:         "text-agent-supervisor font-semibold",
+  supervisor:         "text-agent-supervisor",
   assess_subagent:    "text-info",
   convert_subagent:   "text-agent-convert",
   reconcile_subagent: "text-warning",
   deploy_subagent:    "text-agent-validate",
-  pipeline:           "text-success",
 };
 
-const typeColor: Record<string, string> = {
-  hook:       "text-agent-hook",
-  tool_call:  "text-agent-mcp",
-  artifact:   "text-success",
-  validation: "text-success",
-  delegation: "text-agent-supervisor font-bold",
-  complete:   "text-success font-bold",
-  error:      "text-danger",
-};
-
-function eventColor(ev: Event): string {
-  return typeColor[ev.type] || agentColor[ev.agent] || "text-foreground/80";
+// Heuristic: is this a Claude narration line or a short system status line?
+function isNarration(msg: string): boolean {
+  if (!msg) return false;
+  const trimmed = msg.trim();
+  // System status lines start with ✓ ⚠ ✗ –, or are very short
+  if (/^[✓⚠✗–→←]/.test(trimmed)) return false;
+  if (trimmed.length < 30) return false;
+  // Narration: full sentence, starts with capital letter
+  return /^[A-Z]/.test(trimmed) && trimmed.includes(" ");
 }
 
 function formatTs(iso?: string): string {
-  if (!iso) return new Date().toTimeString().slice(0, 12);
-  try { return new Date(iso).toTimeString().slice(0, 12); }
-  catch { return iso.slice(11, 23); }
+  if (!iso) return new Date().toTimeString().slice(0, 8);
+  try { return new Date(iso).toTimeString().slice(0, 8); }
+  catch { return iso.slice(11, 19); }
 }
 
 function OrchestrationConsole() {
-  // Initialise from persisted store so logs survive tab switches
-  const [events, setEvents] = useState<Event[]>(_persistedEvents);
+  const [events,    setEvents]    = useState<AgentEvent[]>(_persistedEvents);
   const [connected, setConnected] = useState(false);
-  const [paused, setPaused]       = useState(false);
-  const [filter, setFilter]       = useState<string>("all");
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const pausedRef = useRef(paused);
+  const [paused,    setPaused]    = useState(false);
+  const [filter,    setFilter]    = useState("all");
+  const [verbose,   setVerbose]   = useState(false);
+  const scrollRef  = useRef<HTMLDivElement>(null);
+  const pausedRef  = useRef(paused);
   pausedRef.current = paused;
 
-  // Listen for global reset
   useEffect(() => onReset(() => {
     _persistedEvents = [];
     setEvents([]);
@@ -66,134 +60,198 @@ function OrchestrationConsole() {
   }), []);
 
   useEffect(() => {
-    let es: EventSource;
-
-    function connect() {
-      es = new EventSource("/stream");
-      es.onopen    = () => setConnected(true);
-      es.onerror   = () => { setConnected(false); };
-      es.onmessage = (e) => {
-        if (pausedRef.current) return;
-        try {
-          const ev: Event = JSON.parse(e.data);
-          // Update persisted store AND local state
-          _persistedEvents = [..._persistedEvents.slice(-500), ev];
-          setEvents([..._persistedEvents]);
-        } catch {}
-      };
-    }
-
-    connect();
-    return () => es?.close();
+    const es = new EventSource("/stream");
+    es.onopen    = () => setConnected(true);
+    es.onerror   = () => setConnected(false);
+    es.onmessage = (e) => {
+      if (pausedRef.current) return;
+      try {
+        const ev: AgentEvent = JSON.parse(e.data);
+        _persistedEvents = [..._persistedEvents.slice(-500), ev];
+        setEvents([..._persistedEvents]);
+      } catch {}
+    };
+    return () => es.close();
   }, []);
 
   useEffect(() => {
-    if (!paused && scrollRef.current) {
+    if (!paused && scrollRef.current)
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
   }, [events, paused]);
 
   const agentFilters = ["all", "supervisor", "assess_subagent", "convert_subagent", "reconcile_subagent", "deploy_subagent"];
-  const filtered = filter === "all" ? events : events.filter((e) => e.agent === filter);
+
+  const filtered = (filter === "all" ? events : events.filter((e) => e.agent === filter))
+    .filter((e) => verbose || (e.type !== "tool_call" && e.type !== "hook"));
 
   return (
     <AppShell>
       <div className="h-full flex flex-col bg-background">
+
         {/* Header */}
-        <div className="px-6 py-4 border-b border-border bg-white flex items-center gap-4">
+        <div className="px-6 py-4 border-b border-border bg-white flex items-center gap-4 shrink-0">
           <div>
             <div className="text-[13px] uppercase tracking-widest text-muted-foreground font-mono">Live Orchestration</div>
             <h1 className="text-xl font-semibold tracking-tight mt-0.5">
-              Supervisor Stream <span className={`ml-2 text-[15px] ${connected ? "text-success" : "text-danger"}`}>
-                {connected ? "● connected" : "○ waiting"}
+              Agent Stream
+              <span className={`ml-2 text-[14px] font-normal ${connected ? "text-success" : "text-muted-foreground"}`}>
+                {connected ? "● live" : "○ waiting"}
               </span>
             </h1>
           </div>
           <div className="ml-auto flex items-center gap-2">
             <Badge tone={connected ? "success" : "neutral"}>{connected ? "SSE LIVE" : "IDLE"}</Badge>
+
+            {/* Verbose toggle */}
+            <button
+              onClick={() => setVerbose((v) => !v)}
+              title={verbose ? "Hide tool calls & hooks" : "Show tool calls & hooks"}
+              className={`inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-[13px] transition ${
+                verbose
+                  ? "bg-info/10 border-info/40 text-info"
+                  : "border-border bg-surface-2 text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <List className="h-3.5 w-3.5" />
+              {verbose ? "Verbose" : "Verbose"}
+            </button>
+
             <button
               onClick={() => setPaused((p) => !p)}
-              className="inline-flex items-center gap-2 h-9 px-4 rounded-lg border border-border bg-surface-2 text-[14px] hover:bg-surface-3 transition"
+              className="inline-flex items-center gap-2 h-9 px-4 rounded-lg border border-border bg-surface-2 text-[13px] hover:bg-surface-3 transition"
             >
-              {paused ? <><Play className="h-4 w-4" /> Resume</> : <><Pause className="h-4 w-4" /> Pause</>}
+              {paused ? <><Play className="h-3.5 w-3.5" /> Resume</> : <><Pause className="h-3.5 w-3.5" /> Pause</>}
             </button>
             <button
               onClick={() => { _persistedEvents = []; setEvents([]); }}
-              className="inline-flex items-center gap-2 h-9 px-4 rounded-lg border border-border bg-surface-2 text-[14px] hover:bg-surface-3 transition"
+              className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-border bg-surface-2 text-[13px] hover:bg-surface-3 transition"
             >
-              <Trash2 className="h-4 w-4" /> Clear
+              <Trash2 className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
 
         {/* Agent filter bar */}
-        <div className="px-6 py-2 border-b border-border bg-surface-2/50 flex items-center gap-2 text-[13px] font-mono">
-          <span className="text-muted-foreground mr-1">Filter:</span>
+        <div className="px-6 py-2 border-b border-border bg-surface-2/50 flex items-center gap-1.5 text-[12px] font-mono shrink-0">
+          <span className="text-muted-foreground mr-1">Agent:</span>
           {agentFilters.map((a) => (
-            <button
-              key={a}
-              onClick={() => setFilter(a)}
-              className={`px-3 py-1 rounded-md border transition ${
+            <button key={a} onClick={() => setFilter(a)}
+              className={`px-2.5 py-1 rounded border transition ${
                 filter === a
                   ? "bg-primary text-white border-primary"
                   : "border-border bg-white text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {a}
+              }`}>
+              {a === "all" ? "all" : a.replace("_subagent", "")}
             </button>
           ))}
           <span className="ml-auto text-muted-foreground">{filtered.length} events</span>
         </div>
 
         {/* Event stream */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto bg-white px-6 py-4 font-mono">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto bg-white px-5 py-3">
           {filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
               <Cpu className="h-10 w-10 mb-4 opacity-30" />
-              <p className="text-[16px]">No events yet</p>
-              <p className="text-[14px] mt-1">Run a pipeline from the Dashboard to see live orchestration events here</p>
+              <p className="text-[15px]">No events yet</p>
+              <p className="text-[13px] mt-1">Run a pipeline from the Dashboard</p>
             </div>
           ) : (
-            filtered.map((ev, i) => (
-              <div key={i} className="flex gap-4 py-0.5 hover:bg-surface-2/40 rounded px-1 group">
-                <span className="text-muted-foreground/60 select-none w-[110px] shrink-0 text-[13px]">
-                  {formatTs(ev.timestamp)}
-                </span>
-                <span className={`w-[130px] shrink-0 text-[13px] uppercase tracking-wide ${agentColor[ev.agent] || "text-foreground"}`}>
-                  [{ev.agent}]
-                </span>
-                <span className={`text-[14px] leading-relaxed flex-1 ${eventColor(ev)}`}>
-                  {ev.type === "delegation" && ev.target ? (
-                    <><span className="text-muted-foreground">→ </span><span className="font-semibold">{ev.target}</span>  {ev.message}</>
-                  ) : ev.message}
-                  {ev.pipeline && (
-                    <span className="ml-3 text-[12px] text-muted-foreground font-normal">· {ev.pipeline}</span>
-                  )}
-                </span>
-                <span className={`text-[12px] px-1.5 py-0.5 rounded font-mono ml-1 shrink-0 ${
-                  ev.type === "complete" ? "bg-success/10 text-success" :
-                  ev.type === "hook"     ? "bg-warning/10 text-warning" :
-                  ev.type === "tool_call"? "bg-info/10 text-info" :
-                  ev.type === "artifact" ? "bg-success/10 text-success" :
-                  ev.type === "validation"? "bg-success/10 text-success" :
-                  "bg-surface-2 text-muted-foreground"
-                }`}>
-                  {ev.type}
-                </span>
-              </div>
-            ))
+            <div className="space-y-0.5">
+              {filtered.map((ev, i) => {
+
+                // ── Delegation → visual section break ─────────────────────
+                if (ev.type === "delegation") {
+                  return (
+                    <div key={i} className="flex items-center gap-3 my-3 px-3 py-2 rounded-lg bg-surface-2/80 border border-border">
+                      <span className={`text-[12px] font-mono font-semibold uppercase tracking-wider ${agentColor[ev.agent] ?? "text-foreground"}`}>
+                        {ev.agent}
+                      </span>
+                      <span className="text-muted-foreground text-[13px]">→</span>
+                      <span className="text-[13px] font-semibold text-foreground">{ev.target ?? ev.message}</span>
+                      <span className="ml-auto text-[11px] text-muted-foreground/60 font-mono">{formatTs(ev.timestamp)}</span>
+                    </div>
+                  );
+                }
+
+                // ── Complete ──────────────────────────────────────────────
+                if (ev.type === "complete") {
+                  return (
+                    <div key={i} className="flex items-center gap-2 my-2 px-3 py-2 rounded-lg bg-success/8 border border-success/20">
+                      <span className="text-success font-semibold text-[13px]">✓ {ev.message}</span>
+                      <span className="ml-auto text-[11px] text-muted-foreground/60 font-mono">{formatTs(ev.timestamp)}</span>
+                    </div>
+                  );
+                }
+
+                // ── Agent narration (Claude reasoning text) ───────────────
+                if (ev.type === "status" && isNarration(ev.message)) {
+                  return (
+                    <div key={i} className="flex gap-3 py-1.5 px-2 rounded hover:bg-surface-2/30 group">
+                      <span className="text-muted-foreground/50 font-mono text-[11px] w-[70px] shrink-0 mt-0.5">{formatTs(ev.timestamp)}</span>
+                      <div className="flex-1 min-w-0">
+                        <span className={`text-[11px] font-mono uppercase tracking-wider mr-2 ${agentColor[ev.agent] ?? "text-foreground"}`}>
+                          {ev.agent?.replace("_subagent", "")}
+                        </span>
+                        <span className="text-[14px] text-foreground/90 leading-relaxed">{ev.message}</span>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // ── Artifact / validation ─────────────────────────────────
+                if (ev.type === "artifact" || ev.type === "validation") {
+                  return (
+                    <div key={i} className="flex gap-3 py-0.5 px-2 group">
+                      <span className="text-muted-foreground/40 font-mono text-[11px] w-[70px] shrink-0">{formatTs(ev.timestamp)}</span>
+                      <span className="text-[13px] text-success flex-1">{ev.message}</span>
+                    </div>
+                  );
+                }
+
+                // ── Tool call (verbose only) ───────────────────────────────
+                if (ev.type === "tool_call") {
+                  return (
+                    <div key={i} className="flex gap-3 py-0.5 px-2 group opacity-50">
+                      <span className="text-muted-foreground/40 font-mono text-[11px] w-[70px] shrink-0">{formatTs(ev.timestamp)}</span>
+                      <span className="text-[11px] font-mono text-info/80 flex-1">{ev.message}</span>
+                    </div>
+                  );
+                }
+
+                // ── Hook (verbose only) ───────────────────────────────────
+                if (ev.type === "hook") {
+                  return (
+                    <div key={i} className="flex gap-3 py-0.5 px-2 group opacity-40">
+                      <span className="text-muted-foreground/40 font-mono text-[11px] w-[70px] shrink-0">{formatTs(ev.timestamp)}</span>
+                      <span className="text-[11px] font-mono text-warning/70 flex-1">{ev.message}</span>
+                    </div>
+                  );
+                }
+
+                // ── Default status (short ✓/⚠ system lines) ──────────────
+                return (
+                  <div key={i} className="flex gap-3 py-0.5 px-2 hover:bg-surface-2/20 rounded group">
+                    <span className="text-muted-foreground/40 font-mono text-[11px] w-[70px] shrink-0">{formatTs(ev.timestamp)}</span>
+                    <span className={`text-[11px] font-mono uppercase tracking-wider w-[90px] shrink-0 ${agentColor[ev.agent] ?? "text-muted-foreground"}`}>
+                      {ev.agent?.replace("_subagent", "")}
+                    </span>
+                    <span className="text-[13px] text-foreground/70 flex-1">{ev.message}</span>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
 
         {/* Status bar */}
-        <div className="px-6 py-2 border-t border-border bg-surface-2/60 flex items-center gap-4 text-[13px] font-mono text-muted-foreground">
-          <span className={`flex items-center gap-2 ${connected ? "text-success" : "text-muted-foreground"}`}>
-            <span className={`h-2 w-2 rounded-full ${connected ? "bg-success pulse-dot" : "bg-muted-foreground"}`} />
+        <div className="px-6 py-2 border-t border-border bg-surface-2/60 flex items-center gap-4 text-[12px] font-mono text-muted-foreground shrink-0">
+          <span className={`flex items-center gap-1.5 ${connected ? "text-success" : ""}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-success pulse-dot" : "bg-muted-foreground"}`} />
             {connected ? "streaming" : "idle"}
           </span>
-          <span>events: {events.length}</span>
-          <span>filter: {filter}</span>
-          {paused && <span className="text-warning">● paused</span>}
+          <span>{events.length} total · {filtered.length} shown</span>
+          {!verbose && <span className="text-muted-foreground/60">tool calls + hooks hidden · toggle Verbose to show</span>}
+          {paused && <span className="text-warning ml-auto">● paused</span>}
         </div>
       </div>
     </AppShell>

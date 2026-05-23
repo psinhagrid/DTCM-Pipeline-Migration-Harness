@@ -4,6 +4,7 @@ from .generate_dag_tool      import generate_dag_tool
 from .controlm_export_tool   import controlm_export_tool
 from .s3_upload_tool         import s3_upload_tool
 from .read_skill_tool        import read_skill_tool
+from .query_graph_tool       import query_graph_tool
 from .finish_conversion_tool import finish_conversion_tool
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "controlm_export_tool",
     "s3_upload_tool",
     "read_skill_tool",
+    "query_graph_tool",
     "finish_conversion_tool",
 ]

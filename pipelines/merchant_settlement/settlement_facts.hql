@@ -27,7 +27,7 @@ SELECT
     )                                               AS seq_num,
     c.chargeback_ref,
     c.dispute_reason
-FROM raw_transactions t
+FROM raw.transactions t
 JOIN merchant_profiles m
     ON  t.merchant_id = m.merchant_id
     AND m.dt          = '${hiveconf:run_date}'
