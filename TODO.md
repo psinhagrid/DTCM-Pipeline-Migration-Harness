@@ -1,123 +1,139 @@
-# TODO — Known Simplifications & Gaps
+# TODO — Known Gaps & Next Steps
 
-Tracks every deliberate shortcut and what needs to replace it.
+Tracks every stub, simplification, and missing capability.
+Architecture reference: Agent → Subagent → Tools → Utils → Skills
 
 ---
 
-## assess_agent
+## assess_subagent
 
 ### S3 file source
-**File:** `agents/assess_agent/assess_agent.py` — `PIPELINES_ROOT`
+**File:** `agents/assess_subagent/assess_subagent.py` — `PIPELINES_ROOT`
 **Now:** reads `.hql` files from local `pipelines/<name>/` directory
-**TODO:** replace with boto3 S3 client reading from `s3://dtcm-source/hive/pipelines/<name>/`
+**TODO:** replace with boto3 S3 client → `s3://dtcm-source/hive/pipelines/<name>/`
 
 ### Complexity thresholds
-**File:** `agents/assess_agent/utils.py` — `_WEIGHTS`, `_BANDS`
-**Now:** scoring weights and band cutoffs are assumed (not data-driven)
+**File:** `agents/assess_subagent/utils/hql_utils.py` — `WEIGHTS`, `BANDS`
+**Now:** scoring weights and band cutoffs are assumed, not data-driven
 **TODO:** verify thresholds with migration team; calibrate against real migration history
 
 ### UDF registry
-**File:** `agents/assess_agent/utils.py` — `HIVE_BUILTINS`, `SQL_KEYWORDS`
+**File:** `agents/assess_subagent/utils/hql_utils.py` — `HIVE_BUILTINS`
 **Now:** anything not in a hand-curated built-in list is flagged as a UDF
 **TODO:** query Hive metastore (`SHOW FUNCTIONS`) or a central UDF registry API
 
 ### Downstream consumer discovery
-**File:** `agents/assess_agent/utils.py` — `discover_downstream()`
-**Now:** grep sibling `pipelines/` directories for output table name references
+**File:** `agents/assess_subagent/utils/hql_utils.py` — `discover_downstream()`
+**Now:** greps sibling `pipelines/` directories for output table name references
 **TODO:** replace with Neo4j lineage query or data catalog API (Amundsen / DataHub)
 
----
-
-## convert_agent
-
-### HiveQL → PySpark conversion
-**File:** `agents/convert_agent/future_llm_transformer.py`
-**Now:** REAL — Llama 3.2 Vision (10.7B, Ollama local) converts each .hql file
-**Model config:** `OLLAMA_MODEL`, `OLLAMA_BASE_URL`, `OLLAMA_TEMPERATURE` in `.env`
-**TODO:** swap `OLLAMA_BASE_URL` → Claude API when moving to production LLM
-
-### DAG generation — kept as template (intentional)
-**File:** `agents/convert_agent/conversion_engine.py` — `generate_dag()`
-**Now:** Python template generates Airflow DAG from pipeline metadata
-**Why NOT LLM yet:** Real DAG generation requires Control-M XML job chain export as input.
-Until `controlm_mcp.export_job_chain()` is real, the LLM has insufficient input data
-to produce a correct DAG — it would hallucinate task dependencies.
-**TODO:**
-  1. Wire real Control-M MCP server (`controlm_mcp`)
-  2. Export job chain XML for each pipeline
-  3. Feed XML to LLM prompt as context → generate accurate Airflow DAG
-
-### S3 artifact write — simulated event
-**File:** `agents/convert_agent/convert_agent.py` — Phase 5
-**Now:** `S3.put_object` events are emitted but no real write occurs
-**Issues now:** none — artifacts exist in memory only (conversion results in `orchestrator.conversions`)
-**TODO:**
-  1. Add boto3: `pip install boto3`
-  2. IAM role / credentials in `.env` (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`)
-  3. Replace simulated events with real `s3.put_object(Bucket=..., Key=..., Body=spark_python)`
-
-### MWAA DAG validation — simulated event
-**File:** `agents/convert_agent/convert_agent.py` — Phase 4
-**Now:** `MCP → mwaa_mcp.validate_dag` is emitted but no real validation occurs
-**Issues now:** none — a broken DAG would not be caught until deployed
-**TODO:**
-  1. Option A: Install airflow locally, run `airflow dags list` against generated file
-  2. Option B: Wire MWAA MCP server with `POST /dags/validate` endpoint
-
-### Control-M job chain export — simulated event
-**File:** `agents/convert_agent/convert_agent.py` — Phase 4
-**Now:** `MCP → controlm_mcp.export_job_chain` is emitted but no export occurs
-**Issues now:** DAG is generated from pipeline metadata, not actual Control-M definition.
-Task order, retry policies, and SLAs may differ from real Control-M config.
-**TODO:**
-  1. Stand up Control-M MCP server or use Control-M REST API
-  2. `GET /run/jobs?folder=<pipeline>` → returns job chain XML
-  3. Pass XML to DAG generator as structured input
-
-### Governance hooks — simulated
-**File:** `agents/convert_agent/convert_agent.py` — Phase 1 & 5
-**Now:** `visa_governance` and `audit_logger` hook events are emitted with no real check
-**Issues now:** none for demo — a real governance deny would not be caught
-**TODO:**
-  1. Wire real governance API (internal approval workflow)
-  2. If denied → raise exception and emit error event, halt pipeline
-  3. Audit logger → POST to real audit service with pipeline run metadata
+### Neo4j graph write
+**File:** `agents/assess_subagent/tools/neo4j_write_graph_tool.py`
+**Now:** stub — `pass`, no graph is written
+**TODO:** wire real Neo4j instance via MCP server (`neo4j_mcp`)
 
 ---
 
-## reconcile_agent
+## convert_subagent
 
-### Row count validation
-**File:** `agents/reconcile_agent.py`
-**Now:** mocked — always passes
-**TODO:** run actual `COUNT(*)` queries against Hive source and Spark/Iceberg target
+### DAG generation — Control-M dependency
+**File:** `agents/convert_subagent/utils/conversion_engine.py` — `generate_dag()`
+**Now:** template-based DAG from pipeline metadata; task order assumed linear
+**Why not LLM yet:** requires real Control-M XML job chain export as input —
+without it the LLM would hallucinate task dependencies
+**TODO:**
+  1. Wire `controlm_export_tool` via Control-M REST API or MCP server
+  2. Export job chain XML per pipeline
+  3. Feed XML to DAG generator → accurate task ordering + retry policies
 
-### Checksum validation
-**File:** `agents/reconcile_agent.py`
-**Now:** mocked — hardcoded PASS
-**TODO:** compute MD5/SHA on partition data and compare source vs target
+### S3 artifact write
+**File:** `agents/convert_subagent/tools/s3_upload_tool.py`
+**Now:** stub — `pass`, artifacts never written to S3
+**TODO:**
+  1. Add boto3 + IAM credentials in `.env`
+  2. `s3.put_object()` for each generated `.py` file and DAG
 
-### Consumer query replay
-**File:** `agents/reconcile_agent.py`
-**Now:** mocked — hardcoded PASS
-**TODO:** replay saved consumer queries against both clusters and diff results
+### MWAA DAG validation
+**Now:** no validation — a broken DAG would not be caught until deployed
+**TODO:**
+  - Option A: run `airflow dags list` locally against generated file
+  - Option B: wire MWAA MCP server `POST /dags/validate`
+
+### UDF target validation
+**Now:** UDFs are detected in source but never checked against target environment
+**TODO:** verify each detected UDF exists in the target Spark/Iceberg cluster
+before conversion to avoid silent runtime failures
+
+---
+
+## reconcile_subagent
+
+### PySpark syntax validation  ← IN PROGRESS
+**File:** `agents/reconcile_subagent/tools/` — to be added
+**Now:** no syntax check on generated `.py` files — broken code passes reconciliation
+**TODO:** add `validate_pyspark_tool` — parse each `.py` for syntax errors,
+undefined imports, missing SparkSession, missing writeTo/append calls
+
+### Real row count validation
+**File:** `agents/reconcile_subagent/utils/validators.py` — `row_count_check()`
+**Now:** simulated — generates plausible numbers based on similarity score
+**TODO:** run real `COUNT(*)` against Hive source cluster and Iceberg target
+
+### Real checksum validation
+**File:** `agents/reconcile_subagent/utils/validators.py` — `checksum_check()`
+**Now:** simulated — fake SHA-256 values
+**TODO:** compute SHA-256 on partition data and compare source vs target
+
+### Real consumer replay
+**File:** `agents/reconcile_subagent/utils/validators.py` — `consumer_replay_check()`
+**Now:** simulated — hardcoded speedup factor
+**TODO:** replay saved downstream consumer queries against both clusters and diff results
+
+---
+
+## deploy_subagent
+
+### Deployment staging
+**File:** `agents/deploy_subagent/tools/stage_deployment_tool.py`
+**Now:** stub — `pass`, MWAA/EMR never touched
+**TODO:** wire `mwaa_mcp.register_dag()` + `emrs_mcp.validate_job_config()`
+
+### Governance hooks
+**Now:** hook events (`visa_governance`, `audit_logger`) are logged as SSE strings only —
+no real interceptor blocks anything
+**TODO:**
+  1. Wire real governance API — `PreToolUse` hook checks approval before tool runs
+  2. `PostToolUse` hook POSTs audit metadata to compliance service
+  3. Denied tools raise exception and halt the subagent loop
 
 ---
 
 ## Infrastructure
 
-### Neo4j graph
-**Files:** `orchestrator.py`, `agents/assess_agent/assess_agent.py`
-**Now:** `MCP → neo4j_mcp.*` calls are emitted — no graph is written
-**TODO:** connect real Neo4j instance; wire via MCP server
+### MCP Servers — none wired
+The design calls for four MCP servers. All are currently stubs or missing:
 
-### Sessions / run isolation
-**File:** `event_queue.py`
-**Now:** single global queue — concurrent runs would interleave events
-**TODO:** per-run queue keyed by `run_id`; SSE endpoint subscribes to specific run
+| Server | Purpose | Status |
+|---|---|---|
+| `neo4j_mcp` | Dependency graph read/write | stub (`pass`) |
+| `vdc_mcp` | Data catalog registration | not built |
+| `oneflow_mcp` | CI/CD pipeline trigger | not built (YAML written locally instead) |
+| `openlineage_mcp` | Lineage event emission | not built |
 
-### LLM — production upgrade path
-**File:** `agents/convert_agent/future_llm_transformer.py`
-**Now:** Ollama local (Llama 3.2 Vision, 10.7B, GGUF Q4_K_M)
-**TODO:** when moving to production, swap `OLLAMA_BASE_URL` + `OLLAMA_MODEL` in `.env`
-to point at Claude API (`api.anthropic.com`) or hosted inference endpoint
+### Hooks — not real interceptors
+**Now:** `PreToolUse` / `PostToolUse` events are emitted as SSE log strings
+**TODO:** implement as actual Python interceptors that wrap every tool call —
+governance hook can raise to block execution; audit hook writes to compliance store
+
+### Sessions — no persistence
+**File:** `orchestrator.py` — `results`, `conversions`, `reconciliations`, `deployments`
+**Now:** in-memory dicts, wiped on server restart; concurrent runs interleave in SSE queue
+**TODO:**
+  1. Per-run queue keyed by `run_id` in `event_queue.py`
+  2. Persistent session store (Redis or DB) so multi-day migrations resume
+  3. Session forking for parallel validation runs across environments
+
+### Prompt caching
+**Now:** every Claude API call sends full context cold
+**TODO:** add `cache_control` breakpoints on system prompts and skill content —
+skills are read-only and perfect candidates for prompt caching

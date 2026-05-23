@@ -20,11 +20,12 @@ interface Event {
 }
 
 const agentColor: Record<string, string> = {
-  supervisor:      "text-agent-supervisor font-semibold",
-  assess_agent:    "text-info",
-  convert_agent:   "text-agent-convert",
-  reconcile_agent: "text-warning",
-  pipeline:        "text-success",
+  supervisor:         "text-agent-supervisor font-semibold",
+  assess_subagent:    "text-info",
+  convert_subagent:   "text-agent-convert",
+  reconcile_subagent: "text-warning",
+  deploy_subagent:    "text-agent-validate",
+  pipeline:           "text-success",
 };
 
 const typeColor: Record<string, string> = {
@@ -92,7 +93,7 @@ function OrchestrationConsole() {
     }
   }, [events, paused]);
 
-  const agentFilters = ["all", "supervisor", "assess_agent", "convert_agent", "reconcile_agent"];
+  const agentFilters = ["all", "supervisor", "assess_subagent", "convert_subagent", "reconcile_subagent", "deploy_subagent"];
   const filtered = filter === "all" ? events : events.filter((e) => e.agent === filter);
 
   return (
