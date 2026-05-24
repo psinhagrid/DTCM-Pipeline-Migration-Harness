@@ -9,7 +9,7 @@ load_dotenv(Path(__file__).parent / ".env")
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from routes import stream
+from routes import stream, graph
 from orchestrator import (
     run_pipeline,
     results         as pipeline_results,
@@ -29,6 +29,7 @@ app.add_middleware(
 )
 
 app.include_router(stream.router)
+app.include_router(graph.router)
 
 PIPELINES_ROOT = Path("pipelines")
 OUTPUT_ROOT    = Path("output")
@@ -47,8 +48,6 @@ def list_pipelines():
 async def run(pipeline: str = "daily_revenue_agg"):
     asyncio.create_task(run_pipeline(pipeline))
     return {"status": "started", "pipeline": pipeline}
-
-
 
 
 @app.get("/deployment/{pipeline}")
@@ -87,18 +86,6 @@ def get_reconcile(pipeline: str):
     if pipeline not in pipeline_reconciliations:
         raise HTTPException(status_code=404, detail="No reconciliation yet for this pipeline")
     return pipeline_reconciliations[pipeline]
-
-
-# ── Lineage graph ────────────────────────────────────────────────────────────
-
-@app.get("/graph")
-def get_graph():
-    """Query Neo4j for the full pipeline lineage graph via shared graph tool."""
-    from graph.client import query_all_pipelines
-    try:
-        return {"pipelines": query_all_pipelines(), "error": None}
-    except Exception as e:
-        return {"pipelines": [], "error": str(e)}
 
 
 # ── Output file endpoints ─────────────────────────────────────────────────────

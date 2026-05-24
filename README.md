@@ -16,7 +16,10 @@ subagents/
   reconcile_subagent/    ← validates conversion correctness (semantic + static)
   deploy_subagent/       ← validates artifacts, smoke tests, governance approval
 graph/
-  client.py              ← Neo4j query layer (shared by all subagents)
+  client.py              ← Neo4j query layer + compute_migration_plan() (shared by all subagents)
+routes/
+  stream.py              ← SSE event streaming endpoints
+  graph.py               ← lineage graph + migration plan endpoints
 pipelines/               ← HiveQL source files (6 example pipelines)
 ```
 
@@ -112,6 +115,21 @@ cd frontend && bun install && bun dev
 
 ---
 
+## Backend API
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/run/{pipeline_id}` | POST | Run the full migration pipeline for a single pipeline |
+| `/run-all` | POST | Fetch wave ordering from graph, run all pipelines in dependency-tier sequence |
+| `/status/{pipeline_id}` | GET | Current status of a pipeline run |
+| `/stream/{pipeline_id}` | GET | SSE stream of live agent events for a pipeline |
+| `/graph` | GET | Full Neo4j lineage graph as nodes + edges JSON |
+| `/migration-plan` | GET | Topological sort of pipeline graph into dependency waves (static Python, no LLM) |
+
+API docs (Swagger): http://localhost:8001/docs
+
+---
+
 ## Frontend Pages
 
 | Route | Purpose |
@@ -121,7 +139,7 @@ cd frontend && bun install && bun dev
 | `/workbench` | Side-by-side HQL vs PySpark diff |
 | `/validation` | Reconciliation report with confidence scores |
 | `/deployments` | Governance approval + smoke test results |
-| `/context-graph` | Neo4j pipeline dependency DAG (visual) |
+| `/context-graph` | Pipeline dependency DAG + Migration Plan (wave ordering) |
 
 ---
 

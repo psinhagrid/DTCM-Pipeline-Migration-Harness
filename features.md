@@ -20,7 +20,10 @@ For DS architect review. Accurate as of 2026-05-23.
 | Deployment manifest generation | JSON manifests written to disk per pipeline | ✓ Real |
 | Neo4j pipeline lineage graph | Nodes (Pipeline, Table, UDF) + relationships (READS, WRITES, DEPENDS_ON, USES_UDF) | ✓ Real |
 | Context graph visualization | Interactive 4-tier DAG in frontend with blast radius counts on nodes | ✓ Real |
-| Wave-ordered migration execution | Pipelines grouped by wave tier from Neo4j query; each wave runs in parallel | ✓ Real |
+| Migration Plan (wave ordering) | Derives dependency-wave migration sequence from Neo4j graph | ✓ Real (static topological sort on real graph data) |
+| Blast radius visualization | Shows transitive consumer count on each DAG node | ✓ Real |
+| Wave-ordered Run All | Executes pipelines in dependency-tier order; each wave completes before the next begins | ✓ Real |
+| Log verbosity control | Verbose toggle hides tool/hook noise; delegation events shown as visual section breaks; agent narration displayed larger | ✓ Real |
 | Live event streaming (SSE) | `/stream/<pipeline_id>` endpoint pushes agent events to frontend in real time | ✓ Real |
 | Skill-based agent knowledge | Domain rules (repo_scan, dag_generation, semantic_comparison, etc.) loaded on demand per subagent | ✓ Real |
 | Retry logic on Claude API calls | Exponential backoff with jitter on Anthropic API calls | ✓ Real |
@@ -57,7 +60,7 @@ For DS architect review. Accurate as of 2026-05-23.
 - **Checksum validation** — deterministic fake SHA-256 per partition; not derived from real partition data
 - **SLA compliance** — always passes; no real elapsed-time measurement
 - **Consumer replay** — seeded numbers; no downstream query is re-executed
-- **Confidence score** — 80% real semantic analysis + 20% simulated runtime checks; the `data_provenance` field in every report flags which components are simulated
+- **Confidence score** — 0.80 × real semantic analysis + 0.20 × simulated runtime checks (corrected from prior 0.55/0.45 formula). The `data_provenance` field in every reconciliation report explicitly documents which checks are real vs simulated
 - **Smoke tests (3 of 7)** — Spark dry-run, data sampling, SLA timing are all predetermined pass/fail
 - **S3 artifact upload** — `pass` stub in `deploy_subagent`; files remain on local disk only
 - **Control-M job chain export** — `pass` stub; no file produced
@@ -85,7 +88,8 @@ The Neo4j lineage graph is not only for visualization. It is read at multiple po
 | deploy_subagent | upstream migration status | Checks that upstream pipelines are migrated as a governance condition |
 | supervisor | blast_radius (from assessment summary) | If ≥ 3, applies stricter reconciliation threshold (0.80 instead of 0.75) |
 | Frontend /context-graph | all pipelines | Renders interactive 4-tier DAG; blast radius counts shown on nodes |
-| Frontend Run All | wave ordering | Groups pipelines by wave tier; each wave batch runs in parallel |
+| Frontend /context-graph | Migration Plan tab | Shows wave-ordered migration sequence with blast radius, complexity, and effort per pipeline |
+| Frontend Dashboard | Run All | Groups pipelines by wave tier, runs each wave's pipelines, then proceeds to the next wave |
 
 ### Graph Schema
 

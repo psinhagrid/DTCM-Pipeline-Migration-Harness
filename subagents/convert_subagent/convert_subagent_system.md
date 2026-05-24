@@ -17,7 +17,6 @@ Call `read_skill_tool(name)` to load a skill's full instructions before using it
 |---|---|
 | `hiveql_to_pyspark` | HiveQL → PySpark syntax translation rules |
 | `dag_generation` | MWAA DAG structure, SparkSubmitOperator config, retry logic by complexity |
-| `artifact_packaging` | Output naming conventions, S3 path structure |
 | `graph_context` | When downstream consumer count should affect conversion approach |
 
 ---

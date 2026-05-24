@@ -135,3 +135,67 @@ def query_all_pipelines() -> list[dict]:
         return rows
     except Exception:
         return []
+
+
+def compute_migration_plan(pipelines: list[dict] | None = None) -> list[dict]:
+    """
+    Compute the recommended migration wave order from the pipeline graph.
+    Pure topological sort — no business logic, no LLM.
+
+    Returns a list of waves, each with:
+      wave              int — 0 = no dependencies (migrate first)
+      can_run_parallel  bool — multiple pipelines in this wave can run simultaneously
+      pipelines         list — sorted by direct consumer count descending within wave
+    """
+    if pipelines is None:
+        pipelines = query_all_pipelines()
+    if not pipelines:
+        return []
+
+    name_set = {p["name"] for p in pipelines}
+
+    # Assign tier 0 to pipelines with no in-graph dependencies
+    tiers: dict[str, int] = {}
+    for p in pipelines:
+        if not any(d in name_set for d in (p.get("depends_on") or [])):
+            tiers[p["name"]] = 0
+
+    # Propagate: tier = max(upstream tiers) + 1
+    changed = True
+    while changed:
+        changed = False
+        for p in pipelines:
+            if p["name"] in tiers:
+                continue
+            deps = [d for d in (p.get("depends_on") or []) if d in name_set]
+            if all(d in tiers for d in deps):
+                tiers[p["name"]] = max((tiers[d] for d in deps), default=0) + 1
+                changed = True
+
+    for p in pipelines:
+        tiers.setdefault(p["name"], 0)   # unresolved cycles fall to wave 0
+
+    max_tier = max(tiers.values(), default=0)
+
+    waves = []
+    for ti in range(max_tier + 1):
+        wave_pl = [p for p in pipelines if tiers[p["name"]] == ti]
+        # Within a wave: highest direct consumer count first (most impactful pipeline visible first)
+        wave_pl.sort(key=lambda p: len(p.get("consumed_by") or []), reverse=True)
+        waves.append({
+            "wave":             ti,
+            "can_run_parallel": len(wave_pl) > 1,
+            "pipelines": [
+                {
+                    "name":             p["name"],
+                    "complexity":       p.get("complexity"),
+                    "estimated_effort": p.get("estimated_effort"),
+                    "depends_on":       [d for d in (p.get("depends_on") or []) if d in name_set],
+                    "blast_radius":     len(p.get("consumed_by") or []),
+                    "writes":           len(p.get("writes") or []),
+                    "udfs":             len(p.get("udfs") or []),
+                }
+                for p in wave_pl
+            ],
+        })
+    return waves

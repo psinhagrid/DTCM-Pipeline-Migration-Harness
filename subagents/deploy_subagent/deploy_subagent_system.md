@@ -17,7 +17,6 @@ Call `read_skill_tool(name)` to load a skill's full instructions before using it
 |---|---|
 | `artifact_validation` | What makes a valid migration artifact and DAG structure requirements |
 | `deployment_governance` | Readiness score thresholds and governance state logic |
-| `cicd_packaging` | CI/CD pipeline stages, smoke test types, manifest format |
 | `graph_context` | How upstream migration status and blast radius affect governance |
 
 ---

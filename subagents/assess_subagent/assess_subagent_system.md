@@ -15,8 +15,7 @@ Call `read_skill_tool(name)` to load a skill's full instructions before using it
 
 | Skill | What it knows |
 |---|---|
-| `repo_scan` | How to discover pipeline files and parse HiveQL |
-| `lineage_extraction` | How to map upstream dependencies and downstream consumers |
+| `repo_scan` | How to discover pipeline files, parse HiveQL, and extract lineage |
 | `complexity_classification` | How to score migration complexity and identify risk patterns |
 
 ---

@@ -54,8 +54,17 @@ Priority: **P0** = blocks real usage · **P1** = meaningful capability · **P2**
 
 ### Run All — true wave-parallel execution (Frontend)
 **File:** `frontend/src/routes/index.tsx`
-**Now:** Wave ordering implemented. Pipelines within the same wave still run sequentially.
+**Now:** Wave ordering implemented and used by Run All. Individual pipelines within a wave still run sequentially.
 **TODO:** Run all pipelines in the same wave simultaneously using `Promise.all`. Wait for entire wave before starting the next.
+
+### Migration Plan — upgrade from static to intelligent
+**File:** `graph/client.py` — `compute_migration_plan()`
+**Now:** Pure topological sort — correct wave order but no prioritisation intelligence
+**TODO:**
+- Factor in team capacity (don't schedule all COMPLEX pipelines in same wave if team is small)
+- Factor in historical failure rates when available
+- Let migration team annotate pipelines with priority/risk in Neo4j, incorporate into ordering
+**Why:** Currently produces the mathematically correct order. Future: produces the practically optimal order.
 
 ---
 
@@ -92,10 +101,6 @@ Priority: **P0** = blocks real usage · **P1** = meaningful capability · **P2**
 1. Per-run event queue keyed by `run_id`
 2. Persistent store (Redis or DB) for multi-day migration sessions
 3. Session forking for parallel validation runs
-
-### Prompt caching
-**Now:** Every Claude API call sends full system prompt cold
-**TODO:** Add `cache_control` breakpoints on system prompts and skill content — both are read-only and ideal candidates
 
 ### MCP Servers — none wired
 | Server | Purpose | Status |

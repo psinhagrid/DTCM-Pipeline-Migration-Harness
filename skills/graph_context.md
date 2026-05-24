@@ -4,7 +4,6 @@ description: >
   Knows when and how every subagent should use Neo4j lineage graph data.
   Covers blast radius threshold calibration, wave ordering, UDF risk,
   and upstream migration prerequisite checking.
-examples: []
 ---
 
 # Graph Context Skill
@@ -78,3 +77,71 @@ Used by: **deploy_subagent**
 | convert | `migration_wave`, `blast_radius_count` |
 | reconcile | `blast_radius_count`, `threshold_applied` |
 | deploy | `upstream_migration_status`, `blast_radius_count` |
+
+---
+
+## Worked examples
+
+### reconcile_subagent — borderline confidence decision
+
+Scenario: `fraud_risk_scoring` pipeline, `compile_report_tool` returns `confidence=0.72`.
+
+**Step 1 — Is confidence borderline?** Yes — 0.72 is between 0.50 and 0.85.
+
+**Step 2 — Query graph:**
+```
+query_graph_tool("fraud_risk_scoring", "blast_radius")
+→ {"blast_radius": ["executive_reporting", "merchant_settlement", "ops_dashboard"]}
+  count = 3
+```
+
+**Step 3 — Look up threshold:** blast_radius=3 → raised threshold is **0.80**
+
+**Step 4 — Compare:** 0.72 < 0.80 → **retry conversion**
+
+Reasoning to write:
+> "blast_radius=3 raises reconciliation threshold to 0.80. Confidence 0.72 is below this raised threshold. Retrying conversion to improve accuracy before proceeding."
+
+---
+
+### deploy_subagent — upstream prerequisite check
+
+Scenario: deploying `executive_reporting`.
+
+**Step 1 — Query upstream:**
+```
+query_graph_tool("executive_reporting", "upstream")
+→ {"upstream": ["daily_revenue_agg", "merchant_settlement", "fraud_risk_scoring", "user_activity_enrichment"]}
+```
+
+**Step 2 — Check which are migrated** (compare against pipelines in the context that have completed deployment):
+- `daily_revenue_agg` → deployed ✓
+- `merchant_settlement` → deployed ✓
+- `user_activity_enrichment` → deployed ✓
+- `fraud_risk_scoring` → **not yet deployed** ✗
+
+**Step 3 — Add governance condition** (NOT a halt):
+```
+"Upstream pipeline fraud_risk_scoring not yet migrated —
+ verify risk.fraud_flags table availability in Iceberg before prod promotion"
+```
+
+Set in governance result:
+```json
+"conditions": [
+  "Upstream pipeline fraud_risk_scoring not yet migrated — verify table availability before prod promotion"
+]
+```
+
+---
+
+## Neo4j availability — what to do in each case
+
+| Situation | `query_graph_tool` returns | Action |
+|---|---|---|
+| Neo4j running, graph built | Full data | Use for threshold decisions and upstream checks |
+| Neo4j running, graph empty (not built) | `[]` or `{}` | Proceed with standard thresholds. Note: "graph not yet built" |
+| Neo4j not running / unreachable | `{"error": "..."}` | Proceed with standard thresholds. Log warning. |
+| Pipeline not in graph | Empty list | Treat as blast_radius=0. No known consumers. |
+
+**Never halt because the graph is unavailable.** Always fall back to standard thresholds gracefully.

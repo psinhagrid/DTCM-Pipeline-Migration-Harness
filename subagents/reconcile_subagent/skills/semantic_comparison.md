@@ -4,8 +4,6 @@ description: >
   Knows how to validate and compare HiveQL source against PySpark converted code.
   Covers static PySpark validation (syntax, imports, write ops) and 8-dimension
   semantic comparison. Select this skill before analyzing any file pair.
-examples:
-  - examples/file_comparison.md
 ---
 
 # Semantic Comparison Skill
@@ -55,3 +53,77 @@ For each file pair (source `.hql` + converted `.py`), comparison covers:
 
 - Any dimension scoring FAILED generates an issue string: `"[filename] dimension: detail"`
 - Issues are critical if they are `table_parity` or `aggregation_parity` failures
+
+### Worked example — PASSED comparison
+
+HiveQL source:
+```sql
+INSERT OVERWRITE TABLE revenue_daily PARTITION (dt='${hiveconf:run_date}')
+SELECT t.merchant_id, SUM(t.amount) AS total
+FROM raw.transactions t
+JOIN dim.merchants m ON t.merchant_id = m.id
+WHERE t.status = 'SETTLED'
+GROUP BY t.merchant_id;
+```
+
+PySpark output:
+```python
+run_date = spark.conf.get("run_date")
+transactions = spark.table("raw.transactions").alias("t")
+merchants    = spark.table("dim.merchants").alias("m")
+result = (transactions.join(merchants, transactions.merchant_id == merchants.id, "inner")
+    .filter(transactions.status == "SETTLED")
+    .groupBy("t.merchant_id")
+    .agg(F.sum("t.amount").alias("total"))
+)
+result.writeTo("glue_catalog.dtcm.revenue_daily").partitionedBy("dt").overwritePartitions()
+```
+
+Dimension results:
+```
+table_parity:       PASSED  (raw.transactions, dim.merchants both present)
+column_parity:      PASSED  (merchant_id, total both present)
+aggregation_parity: PASSED  (SUM → F.sum with alias)
+join_parity:        PASSED  (INNER JOIN preserved)
+group_by_parity:    PASSED  (merchant_id in groupBy)
+filter_parity:      PASSED  (status='SETTLED' → status=="SETTLED")
+partition_parity:   PASSED  (dt in partitionedBy)
+runtime_var_parity: PASSED  (run_date = spark.conf.get("run_date"))
+overall_similarity: 1.00
+```
+
+### Worked example — FAILED comparison
+
+HiveQL has: `WHERE t.status = 'SETTLED' AND t.region = 'EU'`
+PySpark has: `.filter(transactions.status == "SETTLED")`  ← missing region filter
+
+Result:
+```
+filter_parity: FAILED (score=0.50)
+issue: "[revenue_daily.hql] filter_parity: WHERE has 2 conditions, only 1 mapped — missing: region='EU'"
+```
+
+This is a MEDIUM severity issue. Does NOT trigger halt but must be reported.
+
+### Issue string format
+
+Always format issues as:
+```
+"[{filename}] {dimension}: {description}"
+```
+
+Examples:
+- `"[load_revenue.hql] filter_parity: WHERE clause has 3 conditions, only 2 found in .filter()"`
+- `"[compute_metrics.hql] table_parity: source references dim.products but spark.table('dim.products') not found"`
+- `"[settlement.hql] runtime_var_parity: ${hiveconf:risk_threshold} not mapped to spark.conf.get()"`
+
+### Static validation — what each check catches
+
+| Check | Common failure cause |
+|---|---|
+| syntax | LLM generated invalid Python (missing colon, mismatched brackets) |
+| spark_import | LLM forgot SparkSession import |
+| write_operation | LLM used `df.save()` or similar non-standard API |
+| hiveconf_parity | LLM hardcoded value instead of `spark.conf.get()` |
+| udf_presence | LLM forgot to call a UDF that the source uses |
+| non_empty | LLM returned empty or comment-only file |
