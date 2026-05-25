@@ -44,46 +44,60 @@ SELECT
     kpi.dt
 FROM (
     SELECT
-        rev.region_code,
-        rev.merchant_tier,
-        rev.dt,
-        SUM(rev.total_revenue)                       AS total_revenue,
-        SUM(rev.txn_count)                           AS txn_count,
-        SUM(sf.txn_amount)                           AS settled_amount,
-        COUNT(ff.txn_id)                             AS fraud_txn_count,
-        COUNT(DISTINCT us.user_id)                   AS active_users,
-        SUM(CASE WHEN us.ltv_band = 'HIGH' THEN 1 ELSE 0 END) AS high_ltv_users,
-        CASE
-            WHEN SUM(rev.txn_count) > 0
-            THEN COUNT(ff.txn_id) / SUM(rev.txn_count)
-            ELSE 0
-        END                                          AS fraud_rate,
-        CASE
-            WHEN SUM(rev.total_revenue) > 0
-            THEN SUM(sf.txn_amount) / SUM(rev.total_revenue)
-            ELSE 0
-        END                                          AS settlement_rate,
-        SUM(rev.total_revenue) OVER (
-            PARTITION BY rev.region_code
-            ORDER BY rev.dt
+        grp.region_code,
+        grp.merchant_tier,
+        grp.dt,
+        grp.total_revenue,
+        grp.txn_count,
+        grp.settled_amount,
+        grp.fraud_txn_count,
+        grp.active_users,
+        grp.high_ltv_users,
+        grp.fraud_rate,
+        grp.settlement_rate,
+        SUM(grp.total_revenue) OVER (
+            PARTITION BY grp.region_code
+            ORDER BY grp.dt
             ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
         )                                            AS rolling_30d_revenue
-    FROM revenue_daily rev
-    LEFT JOIN settlement_facts sf
-        ON  rev.merchant_id = sf.merchant_id
-        AND sf.dt           = '${hiveconf:run_date}'
-        AND sf.region_code  = '${hiveconf:region}'
-    LEFT JOIN risk.fraud_flags ff
-        ON  ff.dt           = '${hiveconf:run_date}'
-    LEFT JOIN enriched.user_segments us
-        ON  us.dt           = '${hiveconf:run_date}'
-        AND us.segment      = '${hiveconf:segment_version}'
-    WHERE rev.dt      = '${hiveconf:run_date}'
-      AND rev.channel = '${hiveconf:channel}'
-    GROUP BY
-        rev.region_code,
-        rev.merchant_tier,
-        rev.dt
+    FROM (
+        SELECT
+            rev.region_code,
+            rev.merchant_tier,
+            rev.dt,
+            SUM(rev.total_revenue)                       AS total_revenue,
+            SUM(rev.txn_count)                           AS txn_count,
+            SUM(sf.txn_amount)                           AS settled_amount,
+            COUNT(ff.txn_id)                             AS fraud_txn_count,
+            COUNT(DISTINCT us.user_id)                   AS active_users,
+            SUM(CASE WHEN us.ltv_band = 'HIGH' THEN 1 ELSE 0 END) AS high_ltv_users,
+            CASE
+                WHEN SUM(rev.txn_count) > 0
+                THEN COUNT(ff.txn_id) / SUM(rev.txn_count)
+                ELSE 0
+            END                                          AS fraud_rate,
+            CASE
+                WHEN SUM(rev.total_revenue) > 0
+                THEN SUM(sf.txn_amount) / SUM(rev.total_revenue)
+                ELSE 0
+            END                                          AS settlement_rate
+        FROM revenue_daily rev
+        LEFT JOIN settlement_facts sf
+            ON  rev.merchant_id = sf.merchant_id
+            AND sf.dt           = '${hiveconf:run_date}'
+            AND sf.region_code  = '${hiveconf:region}'
+        LEFT JOIN risk.fraud_flags ff
+            ON  ff.dt           = '${hiveconf:run_date}'
+        LEFT JOIN enriched.user_segments us
+            ON  us.dt           = '${hiveconf:run_date}'
+            AND us.segment      = '${hiveconf:segment_version}'
+        WHERE rev.dt      = '${hiveconf:run_date}'
+          AND rev.channel = '${hiveconf:channel}'
+        GROUP BY
+            rev.region_code,
+            rev.merchant_tier,
+            rev.dt
+    ) grp
 ) kpi
 JOIN reporting.targets tgt
     ON  kpi.region_code = tgt.region

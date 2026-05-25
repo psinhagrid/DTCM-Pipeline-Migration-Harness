@@ -46,25 +46,18 @@ FROM (
         merchant_agg.total_amount,
         merchant_agg.avg_risk_score,
         merchant_agg.high_risk_count,
+        merchant_agg.p50_txn_amount,
+        merchant_agg.p95_txn_amount,
         merchant_agg.dt,
         COALESCE(sf_agg.settled_amount, 0)           AS settled_amount,
         COALESCE(sf_agg.settlement_lag_secs, 0)      AS settlement_lag_secs,
-        PERCENTILE_APPROX(merchant_agg.total_amount, 0.50) OVER (
-            PARTITION BY merchant_agg.channel
-            ORDER BY merchant_agg.txn_count
-            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-        )                                            AS p50_txn_amount,
-        PERCENTILE_APPROX(merchant_agg.total_amount, 0.95) OVER (
-            PARTITION BY merchant_agg.channel
-            ORDER BY merchant_agg.txn_count
-            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-        )                                            AS p95_txn_amount,
         NTILE(4) OVER (
             PARTITION BY merchant_agg.channel
             ORDER BY merchant_agg.total_amount DESC
         )                                            AS amount_quartile
     FROM (
         -- Pre-aggregate transactions per merchant + channel to reduce fan-out in outer join
+        -- PERCENTILE_APPROX is a plain aggregate; computed here alongside other aggregates
         SELECT
             t.merchant_id,
             t.channel,
@@ -73,7 +66,9 @@ FROM (
             SUM(t.txn_amount)                        AS total_amount,
             AVG(rs.risk_score)                       AS avg_risk_score,
             SUM(CASE WHEN rs.risk_score > '${hiveconf:risk_threshold}' THEN 1 ELSE 0 END)
-                                                     AS high_risk_count
+                                                     AS high_risk_count,
+            PERCENTILE_APPROX(t.txn_amount, 0.50)   AS p50_txn_amount,
+            PERCENTILE_APPROX(t.txn_amount, 0.95)   AS p95_txn_amount
         FROM raw.transactions t
         LEFT JOIN risk.risk_scores rs
             ON  t.txn_id = rs.txn_id

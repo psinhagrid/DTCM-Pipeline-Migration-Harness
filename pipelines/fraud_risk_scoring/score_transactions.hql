@@ -56,16 +56,24 @@ JOIN risk.velocity_checks vc
     AND vc.dt    = '${hiveconf:run_date}'
 LEFT JOIN (
     SELECT
-        ue.user_id,
-        ue.user_segment,
-        ue.device_category,
-        ue.dt
-    FROM enriched.user_events ue
-    WHERE ue.dt = '${hiveconf:run_date}'
-    QUALIFY ROW_NUMBER() OVER (
-        PARTITION BY ue.user_id
-        ORDER BY ue.event_ts DESC
-    ) = 1
+        user_id,
+        user_segment,
+        device_category,
+        dt
+    FROM (
+        SELECT
+            ue.user_id,
+            ue.user_segment,
+            ue.device_category,
+            ue.dt,
+            ROW_NUMBER() OVER (
+                PARTITION BY ue.user_id
+                ORDER BY ue.event_ts DESC
+            ) AS rn
+        FROM enriched.user_events ue
+        WHERE ue.dt = '${hiveconf:run_date}'
+    ) ranked
+    WHERE rn = 1
 ) latest_event
     ON  t.user_id = latest_event.user_id
     AND latest_event.dt = '${hiveconf:run_date}'

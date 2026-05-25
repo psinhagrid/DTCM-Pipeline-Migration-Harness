@@ -10,8 +10,7 @@ CREATE TABLE IF NOT EXISTS raw_transactions (
     txn_currency  STRING         COMMENT 'ISO 4217 currency code',
     txn_ts        TIMESTAMP      COMMENT 'Transaction timestamp UTC',
     status        STRING         COMMENT 'SETTLED | PENDING | FAILED | REVERSED',
-    channel       STRING         COMMENT 'POS | ONLINE | MOBILE | ATM',
-    region        STRING         COMMENT 'Geographic region code'
+    channel       STRING         COMMENT 'POS | ONLINE | MOBILE | ATM'
 )
 PARTITIONED BY (dt STRING, region STRING)
 STORED AS ORC

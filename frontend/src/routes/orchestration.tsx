@@ -59,6 +59,7 @@ function OrchestrationConsole() {
   const [filter,       setFilter]       = useState("all");
   const [verbose,      setVerbose]      = useState(false);
   const [pendingInput, setPendingInput] = useState<PendingInput | null>(null);
+  const [chosenMap,    setChosenMap]    = useState<Record<string, string>>({});
   const scrollRef  = useRef<HTMLDivElement>(null);
   const pausedRef  = useRef(paused);
   pausedRef.current = paused;
@@ -110,7 +111,8 @@ function OrchestrationConsole() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, []);
 
-  async function handleChoice(choice: number, chosen: string) {
+  async function handleChoice(choice: number, chosen: string, situation: string) {
+    setChosenMap(prev => ({ ...prev, [situation]: chosen }));
     setPendingInput(null);
     await fetch(`/user-input?choice=${choice}&chosen=${encodeURIComponent(chosen)}`, { method: "POST" });
   }
@@ -198,36 +200,41 @@ function OrchestrationConsole() {
 
                 // ── User input prompt — inline in log stream ──────────────
                 if (ev.type === "user_input_required") {
-                  const opts: string[] = (ev as any).options ?? [];
-                  const isActive = pendingInput?.situation === ((ev as any).situation || ev.message);
+                  const opts: string[]  = (ev as any).options ?? [];
+                  const situation       = (ev as any).situation || ev.message;
+                  const isActive        = pendingInput?.situation === situation;
+                  const chosen          = chosenMap[situation];
                   return (
                     <div key={i} className="my-3 rounded-lg border border-warning/40 bg-warning/5 overflow-hidden">
                       <div className="flex items-center gap-2 px-4 py-2 border-b border-warning/20 bg-warning/8">
-                        <span className="h-2 w-2 rounded-full bg-warning pulse-dot shrink-0" />
-                        <span className="text-[11px] font-mono uppercase tracking-wider text-warning font-semibold">
-                          supervisor · waiting for input
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${isActive ? "bg-warning pulse-dot" : "bg-success"}`} />
+                        <span className={`text-[11px] font-mono uppercase tracking-wider font-semibold ${isActive ? "text-warning" : "text-success"}`}>
+                          {isActive ? "supervisor · waiting for input" : "supervisor · input received"}
                         </span>
                         <span className="ml-auto text-[11px] font-mono text-muted-foreground/60">{formatTs(ev.timestamp)}</span>
                       </div>
                       <div className="px-4 py-3">
-                        <p className="text-[13px] text-foreground/90 mb-3 leading-relaxed">{(ev as any).situation || ev.message}</p>
+                        <p className="text-[13px] text-foreground/90 mb-3 leading-relaxed">{situation}</p>
                         {isActive ? (
-                          <div className="flex flex-wrap gap-2">
+                          <div className="space-y-2">
                             {opts.map((opt, oi) => (
-                              <button key={oi} onClick={() => handleChoice(oi + 1, opt)}
-                                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-md border text-[12px] font-mono transition ${
+                              <button key={oi} onClick={() => handleChoice(oi + 1, opt, situation)}
+                                className={`w-full text-left flex items-center gap-2.5 px-3 py-2 rounded-md border text-[13px] transition ${
                                   oi === opts.length - 1
                                     ? "border-danger/40 text-danger hover:bg-danger/10"
                                     : oi === 0
                                     ? "border-primary/40 text-primary hover:bg-primary/10"
                                     : "border-border text-foreground/70 hover:bg-surface-2"
                                 }`}>
-                                <span className="font-bold">{oi + 1}.</span> {opt}
+                                <span className="font-mono font-bold text-[12px] w-4 shrink-0">{oi + 1}.</span>
+                                <span>{opt}</span>
                               </button>
                             ))}
                           </div>
                         ) : (
-                          <p className="text-[12px] font-mono text-success">✓ Input received</p>
+                          <p className="text-[12px] font-mono text-success">
+                            ✓ You chose: <span className="font-semibold">"{chosen}"</span>
+                          </p>
                         )}
                       </div>
                     </div>
