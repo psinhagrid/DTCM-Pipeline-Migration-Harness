@@ -3,6 +3,9 @@ import { AppShell, Badge } from "@/components/AppShell";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Play, Pause, Trash2, Cpu, List } from "lucide-react";
 import { onReset } from "@/lib/reset-store";
+import { marked } from "marked";
+
+marked.setOptions({ breaks: true, gfm: true });
 
 export const Route = createFileRoute("/orchestration")({ component: OrchestrationConsole });
 
@@ -257,6 +260,8 @@ function OrchestrationConsole() {
 
                 // ── Agent narration (Claude reasoning text) ───────────────
                 if (ev.type === "status" && isNarration(ev.message)) {
+                  const isSuper = ev.agent === "supervisor";
+                  const html    = isSuper ? marked.parse(ev.message) as string : null;
                   return (
                     <div key={i} className="flex gap-3 py-1.5 px-2 rounded hover:bg-surface-2/30 group">
                       <span className="text-muted-foreground/50 font-mono text-[11px] w-[70px] shrink-0 mt-0.5">{formatTs(ev.timestamp)}</span>
@@ -264,7 +269,19 @@ function OrchestrationConsole() {
                         <span className={`text-[11px] font-mono uppercase tracking-wider mr-2 ${agentColor[ev.agent] ?? "text-foreground"}`}>
                           {ev.agent?.replace("_subagent", "")}
                         </span>
-                        <span className="text-[14px] text-foreground/90 leading-relaxed">{ev.message}</span>
+                        {html ? (
+                          <div
+                            className="inline prose prose-sm prose-neutral max-w-none text-[13px] leading-relaxed
+                              [&_table]:border-collapse [&_table]:text-[12px] [&_table]:font-mono [&_table]:my-1
+                              [&_th]:border [&_th]:border-border [&_th]:px-2 [&_th]:py-0.5 [&_th]:bg-surface-2 [&_th]:text-left
+                              [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-0.5
+                              [&_strong]:text-foreground [&_code]:bg-surface-2 [&_code]:px-1 [&_code]:rounded [&_code]:text-[11px]
+                              [&_p]:mb-1 [&_p:last-child]:mb-0 [&_ul]:my-1 [&_li]:ml-4"
+                            dangerouslySetInnerHTML={{ __html: html }}
+                          />
+                        ) : (
+                          <span className="text-[14px] text-foreground/90 leading-relaxed">{ev.message}</span>
+                        )}
                       </div>
                     </div>
                   );

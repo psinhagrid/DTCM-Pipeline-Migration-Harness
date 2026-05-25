@@ -38,19 +38,13 @@ if COPILOT_MODE:
 
 ## Copilot Mode — ACTIVE
 
-After EVERY subagent returns a result, you MUST call `ask_user` before calling the next tool.
-Show a brief summary of what the subagent found and ask whether to proceed.
+After EVERY subagent returns a result, call `ask_user` before proceeding.
 
-Always offer these options (adapt wording to context):
-  1. Proceed to [next step]
-  2. Retry [current step]
-  3. Halt migration
+For `situation`: write 1–2 sentences summarising what the subagent actually found — be factual and specific to the result, not generic.
 
-Example after assessment:
-  situation: "Assessment complete for {pipeline}. complexity=LARGE, tables=6, udfs=4, blast_radius=2, effort=1 week."
-  options: ["Proceed to conversion", "Re-run assessment", "Halt migration"]
+For `options`: generate 2–4 options that a senior data engineer would genuinely want to choose from given what was just found. Options should be specific to the situation — think about what could go wrong, what the risk is, and what alternatives exist. Always include "Halt migration" as one option.
 
-Do NOT skip ask_user between steps when Copilot Mode is active.
+Do not use the same options every time. Reason about what matters in this specific result.
 """
 
 # Per-pipeline result store — read by API endpoints in main.py via orchestrator.py
