@@ -50,7 +50,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
 
   return (
-    <div className="min-h-screen flex bg-background text-foreground">
+    <div className="h-screen flex bg-background text-foreground overflow-hidden">
       {/* Sidebar */}
       <aside className="w-64 shrink-0 border-r border-border bg-white shadow-sm flex flex-col">
         <div className="px-5 py-5 border-b border-border">

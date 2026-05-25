@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell, Badge } from "@/components/AppShell";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Play, Pause, Trash2, Cpu, List } from "lucide-react";
 import { onReset } from "@/lib/reset-store";
 
@@ -43,12 +43,19 @@ function formatTs(iso?: string): string {
   catch { return iso.slice(11, 19); }
 }
 
+interface PendingInput {
+  situation: string;
+  options: string[];
+  pipeline: string;
+}
+
 function OrchestrationConsole() {
-  const [events,    setEvents]    = useState<AgentEvent[]>(_persistedEvents);
-  const [connected, setConnected] = useState(false);
-  const [paused,    setPaused]    = useState(false);
-  const [filter,    setFilter]    = useState("all");
-  const [verbose,   setVerbose]   = useState(false);
+  const [events,       setEvents]       = useState<AgentEvent[]>(_persistedEvents);
+  const [connected,    setConnected]    = useState(false);
+  const [paused,       setPaused]       = useState(false);
+  const [filter,       setFilter]       = useState("all");
+  const [verbose,      setVerbose]      = useState(false);
+  const [pendingInput, setPendingInput] = useState<PendingInput | null>(null);
   const scrollRef  = useRef<HTMLDivElement>(null);
   const pausedRef  = useRef(paused);
   pausedRef.current = paused;
@@ -64,9 +71,23 @@ function OrchestrationConsole() {
     es.onopen    = () => setConnected(true);
     es.onerror   = () => setConnected(false);
     es.onmessage = (e) => {
-      if (pausedRef.current) return;
       try {
         const ev: AgentEvent = JSON.parse(e.data);
+        if (ev.type === "user_input_required") {
+          setPendingInput({
+            situation: (ev as any).situation || ev.message,
+            options:   (ev as any).options   || [],
+            pipeline:  ev.pipeline || "",
+          });
+          // Also add to log stream so it appears inline
+          if (!pausedRef.current) {
+            _persistedEvents = [..._persistedEvents.slice(-500), ev];
+            setEvents([..._persistedEvents]);
+          }
+          return;
+        }
+        if (ev.type === "complete") setPendingInput(null);
+        if (pausedRef.current) return;
         _persistedEvents = [..._persistedEvents.slice(-500), ev];
         setEvents([..._persistedEvents]);
       } catch {}
@@ -74,10 +95,22 @@ function OrchestrationConsole() {
     return () => es.close();
   }, []);
 
+  // Scroll to bottom when new events arrive
   useEffect(() => {
     if (!paused && scrollRef.current)
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [events, paused]);
+
+  // Scroll to bottom on mount — restores position after tab switch
+  useLayoutEffect(() => {
+    if (scrollRef.current)
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, []);
+
+  async function handleChoice(choice: number, chosen: string) {
+    setPendingInput(null);
+    await fetch(`/user-input?choice=${choice}&chosen=${encodeURIComponent(chosen)}`, { method: "POST" });
+  }
 
   const agentFilters = ["all", "supervisor", "assess_subagent", "convert_subagent", "reconcile_subagent", "deploy_subagent"];
 
@@ -86,7 +119,8 @@ function OrchestrationConsole() {
 
   return (
     <AppShell>
-      <div className="h-full flex flex-col bg-background">
+      <div className="h-full flex flex-col bg-background overflow-hidden relative">
+
 
         {/* Header */}
         <div className="px-6 py-4 border-b border-border bg-white flex items-center gap-4 shrink-0">
@@ -158,6 +192,44 @@ function OrchestrationConsole() {
           ) : (
             <div className="space-y-0.5">
               {filtered.map((ev, i) => {
+
+                // ── User input prompt — inline in log stream ──────────────
+                if (ev.type === "user_input_required") {
+                  const opts: string[] = (ev as any).options ?? [];
+                  const isActive = pendingInput?.situation === ((ev as any).situation || ev.message);
+                  return (
+                    <div key={i} className="my-3 rounded-lg border border-warning/40 bg-warning/5 overflow-hidden">
+                      <div className="flex items-center gap-2 px-4 py-2 border-b border-warning/20 bg-warning/8">
+                        <span className="h-2 w-2 rounded-full bg-warning pulse-dot shrink-0" />
+                        <span className="text-[11px] font-mono uppercase tracking-wider text-warning font-semibold">
+                          supervisor · waiting for input
+                        </span>
+                        <span className="ml-auto text-[11px] font-mono text-muted-foreground/60">{formatTs(ev.timestamp)}</span>
+                      </div>
+                      <div className="px-4 py-3">
+                        <p className="text-[13px] text-foreground/90 mb-3 leading-relaxed">{(ev as any).situation || ev.message}</p>
+                        {isActive ? (
+                          <div className="flex flex-wrap gap-2">
+                            {opts.map((opt, oi) => (
+                              <button key={oi} onClick={() => handleChoice(oi + 1, opt)}
+                                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-md border text-[12px] font-mono transition ${
+                                  oi === opts.length - 1
+                                    ? "border-danger/40 text-danger hover:bg-danger/10"
+                                    : oi === 0
+                                    ? "border-primary/40 text-primary hover:bg-primary/10"
+                                    : "border-border text-foreground/70 hover:bg-surface-2"
+                                }`}>
+                                <span className="font-bold">{oi + 1}.</span> {opt}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[12px] font-mono text-success">✓ Input received</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
 
                 // ── Delegation → visual section break ─────────────────────
                 if (ev.type === "delegation") {

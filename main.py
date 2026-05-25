@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from routes import stream, graph
+from event_queue import resolve_user_input, _pending_input
 from orchestrator import (
     run_pipeline,
     results         as pipeline_results,
@@ -42,6 +43,25 @@ def list_pipelines():
     return {
         "pipelines": [d.name for d in sorted(PIPELINES_ROOT.iterdir()) if d.is_dir()]
     }
+
+
+@app.get("/pending-input")
+def get_pending_input():
+    """Return the current pending user input request, if any."""
+    import event_queue as eq
+    return eq._pending_input or {}
+
+
+@app.post("/user-input")
+async def submit_user_input(choice: int, chosen: str = ""):
+    """Frontend submits the user's choice for a pending ask_user prompt."""
+    import event_queue as eq
+    if not chosen:
+        pending = eq._pending_input
+        if pending and 1 <= choice <= len(pending.get("options", [])):
+            chosen = pending["options"][choice - 1]
+    resolved = eq.resolve_user_input(choice, chosen)
+    return {"status": "ok" if resolved else "no_pending_input"}
 
 
 @app.post("/run")

@@ -32,6 +32,8 @@ For DS architect review. Accurate as of 2026-05-23.
 | MWAA/EMR deployment staging | Stub — no staging occurs | ✗ Simulated |
 | CI/CD YAML generation | Syntactically valid template; not executable or wired to any pipeline | ✗ Simulated |
 | Governance hooks (PreToolUse/PostToolUse) | SSE log strings only; no real tool interception | ✗ Simulated |
+| Interactive terminal prompts (ask_user) | Supervisor pauses and asks user for guidance when unexpected results occur | ✓ Real |
+| Copilot mode | Supervisor pauses after each subagent step for human approval (COPILOT_MODE=true) | ✓ Real |
 
 ---
 
@@ -107,3 +109,15 @@ The Neo4j lineage graph is not only for visualization. It is read at multiple po
 | convert_subagent | HQL → PySpark + Airflow DAG generation, packages artifacts | 7 tools | hiveql_to_pyspark, dag_generation, artifact_packaging, graph_context |
 | reconcile_subagent | Validates conversion correctness via semantic + runtime checks | 7 tools | semantic_comparison, runtime_validation, risk_assessment, graph_context |
 | deploy_subagent | Artifact validation, smoke tests, governance scoring, manifest generation | 8 tools | artifact_validation, deployment_governance, cicd_packaging, graph_context |
+
+---
+
+### Supervisor Interaction Modes
+
+| Mode | How | When to use |
+|---|---|---|
+| Autonomous | No interruptions — supervisor decides everything | Production runs, familiar pipelines |
+| Copilot | `COPILOT_MODE=true` — pause + confirm after each step | First run, debugging, high-stakes pipelines |
+| Interactive (always on) | `ask_user` called automatically on unexpected results | Any time — handles errors gracefully |
+
+**Important:** Only the supervisor has `ask_user`. Subagents surface findings in their result dicts. The supervisor interprets those findings and decides whether to ask the user.

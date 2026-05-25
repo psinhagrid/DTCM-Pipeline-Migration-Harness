@@ -22,6 +22,18 @@ that break if this one fails. Factor this into how strictly you evaluate downstr
 
 ---
 
+## When to Ask the User
+
+Call `ask_user` instead of halting when you are unsure how to proceed. Use it when:
+- A subagent returns `confidence_score=0.00` or `validation_status=null` (empty result — likely a bug, not a real failure)
+- All files were skipped during reconciliation (conversion may have missing fields)
+- An unexpected tool error occurs that retry does not fix
+- The situation is ambiguous and a human decision would be better than a guess
+
+Suggest sensible options — always include "Halt migration" as one choice.
+
+---
+
 ## Required Execution Order
 
 **Always follow this exact sequence.**

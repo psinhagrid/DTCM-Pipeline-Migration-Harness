@@ -23,14 +23,35 @@ from subagents.assess_subagent    import run_assessment
 from subagents.convert_subagent   import run_conversion
 from subagents.reconcile_subagent import run_reconciliation
 from subagents.deploy_subagent    import run_deployment
-from .tools import finish_migration_tool, query_graph_tool
+from .tools import finish_migration_tool, query_graph_tool, ask_user_tool
 from graph.client import query_blast_radius
 
 NAME           = "supervisor"
 MAX_ITERATIONS = 20
 MODEL          = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
+COPILOT_MODE   = os.getenv("COPILOT_MODE", "false").lower() == "true"
 
 _SYSTEM_PROMPT = (Path(__file__).parent / "supervisor_system.md").read_text(encoding="utf-8")
+
+if COPILOT_MODE:
+    _SYSTEM_PROMPT += """
+
+## Copilot Mode — ACTIVE
+
+After EVERY subagent returns a result, you MUST call `ask_user` before calling the next tool.
+Show a brief summary of what the subagent found and ask whether to proceed.
+
+Always offer these options (adapt wording to context):
+  1. Proceed to [next step]
+  2. Retry [current step]
+  3. Halt migration
+
+Example after assessment:
+  situation: "Assessment complete for {pipeline}. complexity=LARGE, tables=6, udfs=4, blast_radius=2, effort=1 week."
+  options: ["Proceed to conversion", "Re-run assessment", "Halt migration"]
+
+Do NOT skip ask_user between steps when Copilot Mode is active.
+"""
 
 # Per-pipeline result store — read by API endpoints in main.py via orchestrator.py
 context_store: dict[str, dict] = {}
@@ -113,6 +134,32 @@ TOOLS = [
                 "query":    {"type": "string", "enum": ["summary","downstream","upstream","blast_radius","wave"]},
             },
             "required": ["pipeline", "query"],
+        },
+    },
+    {
+        "name": "ask_user",
+        "description": (
+            "Pause the migration and ask the human for guidance in the terminal. "
+            "Use when a subagent returns unexpected results (confidence=0.00, empty result, "
+            "all files skipped, null validation_status) or when you are unsure how to proceed. "
+            "Prints numbered options to the terminal and waits for the user to choose."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "situation": {
+                    "type": "string",
+                    "description": "Clear description of what went wrong or why guidance is needed",
+                },
+                "options": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "2–4 numbered options for the user to choose from",
+                    "minItems": 2,
+                    "maxItems": 4,
+                },
+            },
+            "required": ["situation", "options"],
         },
     },
     {
@@ -214,6 +261,15 @@ async def _execute_tool(name: str, args: dict, context: dict, pipeline: str) -> 
             args.get("query", "summary"),
         )
 
+    elif name == "ask_user":
+        await _e("status", f"⏸ Waiting for user input — {args.get('situation', '')[:80]}")
+        result = await ask_user_tool(
+            situation=args["situation"],
+            options=args["options"],
+        )
+        await _e("status", f"▶ User chose: {result['chosen']}")
+        return result
+
     elif name == "finish_migration":
         result = finish_migration_tool(
             pipeline=args["pipeline"],
@@ -249,70 +305,78 @@ async def run_migration(pipeline_name: str) -> dict:
 
     iterations = 0
 
-    while iterations < MAX_ITERATIONS:
-        iterations += 1
+    try:
+        while iterations < MAX_ITERATIONS:
+            iterations += 1
 
-        response = await claude_with_retry(
-            client,
-            model=MODEL,
-            max_tokens=1024,
-            system=_SYSTEM_PROMPT,
-            tools=TOOLS,
-            messages=messages,
-        )
+            response = await claude_with_retry(
+                client,
+                model=MODEL,
+                max_tokens=1024,
+                system=_SYSTEM_PROMPT,
+                tools=TOOLS,
+                messages=messages,
+            )
 
-        messages.append({"role": "assistant", "content": response.content})
+            messages.append({"role": "assistant", "content": response.content})
 
-        # Stream any LLM reasoning to the frontend
-        for block in response.content:
-            if hasattr(block, "text") and block.text.strip():
-                await _e("status", block.text.strip())
+            for block in response.content:
+                if hasattr(block, "text") and block.text.strip():
+                    await _e("status", block.text.strip())
 
-        if response.stop_reason == "end_turn":
-            await _e("status", "Migration complete", done=True)
-            break
+            if response.stop_reason == "end_turn":
+                await _e("status", "Migration complete", done=True)
+                break
 
-        if response.stop_reason != "tool_use":
-            break
+            if response.stop_reason != "tool_use":
+                break
 
-        # ── Execute tool calls ────────────────────────────────────────────────
-        tool_results = []
-        for block in response.content:
-            if block.type != "tool_use":
-                continue
+            # ── Execute tool calls ────────────────────────────────────────────
+            tool_results = []
+            for block in response.content:
+                if block.type != "tool_use":
+                    continue
 
-            await _e("delegation" if block.name.startswith("run_") else "tool_call",
-                     f"→ {block.name}({_fmt_args(block.input)})",
-                     target=block.name)
-            await asyncio.sleep(0.2)
+                await _e("delegation" if block.name.startswith("run_") else "tool_call",
+                         f"→ {block.name}({_fmt_args(block.input)})",
+                         target=block.name)
+                await asyncio.sleep(0.2)
 
-            result = await _execute_tool(block.name, block.input, context, pipeline_name)
+                result = await _execute_tool(block.name, block.input, context, pipeline_name)
 
-            # finish_migration → exit immediately
-            if block.name == "finish_migration" and result.get("finished"):
-                outcome = result["outcome"]
-                summary = result["summary"]
-                await _e("status", f"Migration {outcome} — {summary}")
-                await _e("hook",   "PostToolUse → audit_logger.record_migration ✓")
-                await push(type="complete", agent=NAME, message=f"Migration {outcome} — {pipeline_name}", pipeline=pipeline_name)
-                context_store[pipeline_name] = context
-                return context
+                if block.name == "finish_migration" and result.get("finished"):
+                    outcome = result["outcome"]
+                    summary = result["summary"]
+                    await _e("status", f"Migration {outcome} — {summary}")
+                    await _e("hook",   "PostToolUse → audit_logger.record_migration ✓")
+                    await push(type="complete", agent=NAME, message=f"Migration {outcome} — {pipeline_name}", pipeline=pipeline_name)
+                    context_store[pipeline_name] = context
+                    return context
 
-            await _e("status", _fmt_result(block.name, result))
-            await asyncio.sleep(0.2)
+                await _e("status", _fmt_result(block.name, result))
+                await asyncio.sleep(0.2)
 
-            tool_results.append({
-                "type":        "tool_result",
-                "tool_use_id": block.id,
-                "content":     json.dumps(result, default=str),
-            })
+                tool_results.append({
+                    "type":        "tool_result",
+                    "tool_use_id": block.id,
+                    "content":     json.dumps(result, default=str),
+                })
 
-        messages.append({"role": "user", "content": tool_results})
+            messages.append({"role": "user", "content": tool_results})
 
-    if iterations >= MAX_ITERATIONS:
-        await _e("status", f"⚠ Safety stop — {MAX_ITERATIONS} iterations reached", done=True)
+        if iterations >= MAX_ITERATIONS:
+            await _e("status", f"⚠ Safety stop — {MAX_ITERATIONS} iterations reached", done=True)
 
-    context_store[pipeline_name] = context
+    except Exception as exc:
+        await _e("status", f"⚠ Migration crashed: {exc}", done=True)
+        await push(type="complete", agent=NAME,
+                   message=f"Migration FAILED — {pipeline_name}", pipeline=pipeline_name)
+
+    finally:
+        # Always save whatever partial results were collected — even on crash.
+        # Ensures workbench / validation / deployment show data from completed stages.
+        context_store[pipeline_name] = context
+
     return context
 
 

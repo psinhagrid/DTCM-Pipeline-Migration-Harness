@@ -97,6 +97,24 @@ Required variables:
 | `NEO4J_URI` | `bolt://localhost:7687` | Neo4j bolt URI. |
 | `NEO4J_USER` | `neo4j` | Neo4j username. |
 | `NEO4J_PASSWORD` | `dtcm_local` | Neo4j password. |
+| `COPILOT_MODE` | `false` | Set to `true` to have the supervisor pause after each subagent step and ask before proceeding. |
+
+---
+
+## Modes
+
+### Autonomous (default)
+Pipeline runs end-to-end without interruption. Supervisor halts on decision gates.
+
+### Copilot Mode
+Set `COPILOT_MODE=true`. Supervisor pauses after each subagent and asks whether to proceed.
+Useful for first runs, debugging, or high-stakes pipelines.
+
+### Interactive Prompts
+The supervisor automatically asks for guidance when unexpected results occur (confidence=0.00,
+empty subagent result, etc.). Type a number in the terminal to choose.
+
+---
 
 ### 4. Backend
 

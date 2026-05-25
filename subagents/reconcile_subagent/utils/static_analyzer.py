@@ -412,7 +412,10 @@ def check_workflow_parity(conversion: dict) -> dict:
     Real files vs real DAG task definitions.
     """
     files   = conversion.get("files", [])
-    dag_str = conversion.get("dag", "")
+    dag_raw = conversion.get("dag", "") or conversion.get("dag_content", "")
+    # LLM sometimes passes the full generate_dag_tool result dict instead of
+    # extracting dag_content — handle both shapes defensively
+    dag_str = dag_raw if isinstance(dag_raw, str) else (dag_raw.get("dag_content", "") if isinstance(dag_raw, dict) else "")
 
     dml_count  = sum(
         1 for f in files
