@@ -12,6 +12,16 @@ Read each result carefully before deciding the next step.
 
 | Tool | What it does | Watch these fields |
 |---|---|---|
+| `run_hql_repair` | Finds and fixes HiveQL syntax errors — user approves each fix | `fix_count`, `status` |
+| `run_pyspark_repair` | Finds and fixes PySpark issues — user approves each fix | `fix_count`, `status` |
+
+Call `run_hql_repair` when assessment returns `syntax_errors > 0`. After it completes, re-run `run_assessment`.
+Call `run_pyspark_repair` when reconciliation finds PySpark validation failures. After it completes, re-run `run_reconciliation`.
+
+---
+
+| Tool | What it does | Watch these fields |
+|---|---|---|
 | `run_assessment` | Scans HiveQL — complexity, tables, UDFs, lineage | `complexity`, `tables`, `udfs`, `syntax_errors`, `blast_radius` |
 | `run_conversion` | Converts HiveQL → PySpark + MWAA DAG | `conversion_status`, `transformations_applied` |
 | `run_reconciliation` | Validates conversion — semantic + runtime checks | `validation_status`, `confidence_score`, `migration_risk`, `threshold_applied` |

@@ -21,19 +21,22 @@ SELECT
     CASE
         WHEN agg.page_count <= 1 THEN 1
         ELSE 0
-    END                                              AS is_bounce
+    END                                              AS is_bounce,
+    agg.dt
 FROM (
     SELECT
         rc.session_id,
         rc.user_id,
         MIN(rc.event_ts)                             AS session_start,
         MAX(rc.event_ts)                             AS session_end,
-        COUNT(DISTINCT rc.page_url)                  AS page_count
+        COUNT(DISTINCT rc.page_url)                  AS page_count,
+        rc.dt
     FROM external.raw_clickstream rc
     WHERE rc.dt        = '${hiveconf:run_date}'
       AND rc.session_id IS NOT NULL
       AND rc.user_id    IS NOT NULL
     GROUP BY
         rc.session_id,
-        rc.user_id
+        rc.user_id,
+        rc.dt
 ) agg;

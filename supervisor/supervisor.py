@@ -23,6 +23,7 @@ from subagents.assess_subagent    import run_assessment
 from subagents.convert_subagent   import run_conversion
 from subagents.reconcile_subagent import run_reconciliation
 from subagents.deploy_subagent    import run_deployment
+from subagents.repair_code        import run_repair
 from .tools import finish_migration_tool, query_graph_tool, ask_user_tool
 from graph.client import query_blast_radius
 
@@ -128,6 +129,41 @@ TOOLS = [
                 "query":    {"type": "string", "enum": ["summary","downstream","upstream","blast_radius","wave"]},
             },
             "required": ["pipeline", "query"],
+        },
+    },
+    {
+        "name": "run_hql_repair",
+        "description": (
+            "Repair HiveQL source files for a pipeline. "
+            "The repair agent reads each .hql file, identifies syntax errors, "
+            "proposes each fix to the user line-by-line, and writes accepted fixes "
+            "back to the original file. Call when assessment returns syntax_errors > 0. "
+            "After repair completes, re-run run_assessment to verify."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pipeline": {"type": "string"},
+            },
+            "required": ["pipeline"],
+        },
+    },
+    {
+        "name": "run_pyspark_repair",
+        "description": (
+            "Repair generated PySpark files for a pipeline. "
+            "The repair agent reads each .py file, identifies issues (missing imports, "
+            "wrong write ops, unmapped hiveconf vars), proposes each fix to the user, "
+            "and writes accepted fixes in place. "
+            "Call when reconciliation finds PySpark validation failures. "
+            "After repair completes, re-run run_reconciliation to verify."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pipeline": {"type": "string"},
+            },
+            "required": ["pipeline"],
         },
     },
     {
@@ -254,6 +290,26 @@ async def _execute_tool(name: str, args: dict, context: dict, pipeline: str) -> 
             args["pipeline"],
             args.get("query", "summary"),
         )
+
+    elif name == "run_hql_repair":
+        result = await run_repair(args["pipeline"], target="hql")
+        return {
+            "stage":      "hql_repair",
+            "status":     result.get("status", "UNKNOWN"),
+            "files_fixed": result.get("files_fixed", []),
+            "fix_count":  result.get("fix_count", 0),
+            "note":       "Re-run run_assessment to verify fixes.",
+        }
+
+    elif name == "run_pyspark_repair":
+        result = await run_repair(args["pipeline"], target="pyspark")
+        return {
+            "stage":      "pyspark_repair",
+            "status":     result.get("status", "UNKNOWN"),
+            "files_fixed": result.get("files_fixed", []),
+            "fix_count":  result.get("fix_count", 0),
+            "note":       "Re-run run_reconciliation to verify fixes.",
+        }
 
     elif name == "ask_user":
         await _e("status", f"⏸ Waiting for user input — {args.get('situation', '')[:80]}")

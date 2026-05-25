@@ -103,8 +103,6 @@ function TopBar() {
       <div className="flex items-center gap-2 text-[13px] font-mono text-muted-foreground">
         <span className="h-2 w-2 rounded-full bg-success pulse-dot" />
         <span className="text-foreground font-medium">SUPERVISOR · ONLINE</span>
-        <span className="text-border-strong">│</span>
-        <span>4 AGENTS</span>
       </div>
 
       <div className="ml-auto flex items-center gap-3">
