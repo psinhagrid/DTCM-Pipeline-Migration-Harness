@@ -109,6 +109,21 @@ def compile_report_tool(
         "partitions":   round(agg["partition_parity"]["score"]   * 100),
     }
 
+    # check_details: per-check score + detail text, consumed by the validation UI
+    check_details = {d: {"score": agg[d]["score"], "detail": agg[d]["detail"]} for d in dims}
+    check_details.update({
+        "workflow_parity": {"score": 1.0 if workflow_check.get("status") == "PASSED" else 0.0,
+                            "detail": workflow_check.get("detail", "")},
+        "row_count":       {"score": 1.0 if rc.get("status") == "PASSED" else (0.5 if rc.get("status") == "WARNING" else 0.0),
+                            "detail": rc.get("detail", "")},
+        "checksum":        {"score": 1.0 if ck.get("status") == "PASSED" else 0.0,
+                            "detail": ck.get("detail", "")},
+        "sla_compliance":  {"score": 1.0 if sl.get("status") == "PASSED" else 0.5,
+                            "detail": sl.get("detail", "")},
+        "consumer_replay": {"score": 1.0 if cr.get("status") == "PASSED" else (0.5 if cr.get("status") == "WARNING" else 0.0),
+                            "detail": cr.get("detail", "")},
+    })
+
     return {
         "pipeline":             pipeline,
         "validation_status":    val_status,
@@ -121,6 +136,7 @@ def compile_report_tool(
         "source_checksum":      ck.get("source_checksum", ""),
         "target_checksum":      ck.get("target_checksum", ""),
         "checks":               flat_checks,
+        "check_details":        check_details,
         "issues":               all_issues,
         "severity_map":         severity_map,
         "migration_risk":       migration_risk,

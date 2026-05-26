@@ -73,9 +73,9 @@ function GovernanceBanner({ gov }: { gov: any }) {
 }
 
 function Timeline({ data }: { data: any }) {
-  const artOk   = data.artifact_checks?.deployment_ready;
-  const smokeOk = data.smoke_results?.overall !== "FAILED";
-  const govOk   = ["APPROVED","APPROVED_NON_PROD"].includes(data.deployment_status);
+  const artOk   = data.artifact_checks?.deployment_ready ?? data.artifact_checks?.all_artifacts_valid;
+  const smokeOk = (data.smoke_results?.overall ?? data.smoke_results?.status) !== "FAILED";
+  const govOk   = ["APPROVED","APPROVED_NON_PROD"].includes(data.deployment_status ?? data.governance?.state);
 
   const stages = [
     { label: "Artifact Validation",  sub: "Python AST + DAG structure",   ok: artOk  },

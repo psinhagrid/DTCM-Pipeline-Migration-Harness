@@ -43,11 +43,13 @@ _HIVECONF         = re.compile(r'\$\{hiveconf:[^}]+\}')
 
 # ── PySpark patterns ──────────────────────────────────────────────────────────
 
-_PY_TABLE         = re.compile(r'spark\.table\(["\']([^"\']+)["\']\)')
+# Matches both spark.table("db.tbl") and spark.read.table("db.tbl")
+_PY_TABLE         = re.compile(r'spark(?:\.read)?\.table\(["\']([^"\']+)["\']\)')
 _PY_AGG           = re.compile(r'\bF\.(sum|count|avg|min|max|collect_list|collect_set|percentile|stddev|variance)\s*\(', re.I)
 _PY_JOIN          = re.compile(r'\.join\s*\(', re.I)
-_PY_JOIN_TYPE     = re.compile(r'\.join\s*\([^,)]+,[^,)]+,\s*["\'](\w+)["\']', re.I)
-_PY_GROUP         = re.compile(r'\.groupBy\s*\(([^)]+)\)')
+_PY_JOIN_TYPE     = re.compile(r'\.join\s*\([^,)]+,[^,)]+,\s*["\']([\w]+)["\']', re.I)
+# Handles single-line and multi-argument groupBy including F.col() wrappers
+_PY_GROUP         = re.compile(r'\.groupBy\s*\((.+?)\)(?=\s*[.\\\n])', re.DOTALL)
 _PY_FILTER        = re.compile(r'\.filter\s*\((.+?)(?=\)\s*[\\.\n]|\)\s*$)', re.I | re.DOTALL)
 _PY_WRITE         = re.compile(r'\.writeTo\s*\(["\']([^"\']+)["\']\)')
 _PY_PARTITION_BY  = re.compile(r'\.partitionedBy\s*\(([^)]+)\)')
@@ -197,9 +199,13 @@ def _py_where_tokens(py: str) -> set:
     return tokens
 
 
+_PY_COL_STRIP = re.compile(r'(?:F\.col|col)\s*\(["\']([^"\']+)["\']\)')
+
+
 def analyze_pyspark(py: str) -> QueryStructure:
     qs = QueryStructure(source_type="pyspark")
 
+    # Collect tables from both spark.table() and spark.read.table()
     qs.tables       = {m.group(1).lower().split('.')[-1] for m in _PY_TABLE.finditer(py)}
     qs.aggs         = {m.group(1).upper() for m in _PY_AGG.finditer(py)}
     qs.join_count   = len(_PY_JOIN.findall(py))
@@ -213,8 +219,11 @@ def analyze_pyspark(py: str) -> QueryStructure:
 
     m_grp = _PY_GROUP.search(py)
     if m_grp:
-        qs.group_cols = [c.strip().strip('"\'').split('.')[-1].lower()
-                         for c in m_grp.group(1).split(',') if c.strip()]
+        raw_cols = m_grp.group(1)
+        # Strip F.col("name") / col("name") wrappers to bare column names
+        expanded = _PY_COL_STRIP.sub(lambda m: m.group(1), raw_cols)
+        qs.group_cols = [c.strip().strip("\"'").split('.')[-1].lower()
+                         for c in expanded.split(',') if c.strip()]
 
     m_part = _PY_PARTITION_BY.search(py)
     if m_part:
@@ -239,13 +248,19 @@ def compare(hive: QueryStructure, spark: QueryStructure) -> dict:
     issues = []
 
     # ── 1. Table parity ───────────────────────────────────────────────
-    missing_tables = hive.tables - spark.tables
-    extra_tables   = spark.tables - hive.tables - {spark.write_target}
+    # Normalize to bare table name (strip schema prefix) for comparison.
+    # HQL: "bronze.store_orders" → "store_orders"
+    # PySpark spark.read.table returns the full name but analyze_pyspark
+    # already strips to last segment — normalise HQL to match.
+    hive_tables_norm  = {t.split('.')[-1] for t in hive.tables}
+    spark_tables_norm = {t.split('.')[-1] for t in spark.tables}
+    missing_tables = hive_tables_norm - spark_tables_norm
+    extra_tables   = spark_tables_norm - hive_tables_norm - {spark.write_target.split('.')[-1]}
 
     if not missing_tables:
         checks["table_parity"] = {
             "status": "PASSED",
-            "detail": f"All {len(hive.tables)} source table(s) present in PySpark",
+            "detail": f"All {len(hive_tables_norm)} source table(s) present in PySpark",
             "score":  1.0,
         }
     else:
@@ -254,7 +269,7 @@ def compare(hive: QueryStructure, spark: QueryStructure) -> dict:
         checks["table_parity"] = {
             "status": "FAILED",
             "detail": msg,
-            "score":  max(0.0, 1.0 - len(missing_tables) / max(len(hive.tables), 1)),
+            "score":  max(0.0, 1.0 - len(missing_tables) / max(len(hive_tables_norm), 1)),
         }
 
     # ── 2. Column parity ──────────────────────────────────────────────
@@ -383,12 +398,16 @@ def compare(hive: QueryStructure, spark: QueryStructure) -> dict:
             checks["partition_parity"] = {"status": "WARNING", "detail": msg, "score": 0.5}
 
     # ── 8. Runtime variable parity ────────────────────────────────────
+    # Normalise HQL vars: "${hiveconf:run_date}" → "run_date"
+    # PySpark vars are already bare key names from spark.conf.get("run_date")
     if hive.runtime_vars:
-        missing_rv = hive.runtime_vars - spark.runtime_vars
+        hive_rv_norm  = {re.sub(r'^\$\{hiveconf:', '', v).rstrip('}') for v in hive.runtime_vars}
+        spark_rv_norm = {v.split(':')[-1] for v in spark.runtime_vars}  # handles "hiveconf:key" or "key"
+        missing_rv    = hive_rv_norm - spark_rv_norm
         if not missing_rv:
             checks["runtime_var_parity"] = {
                 "status": "PASSED",
-                "detail": f"All {len(hive.runtime_vars)} hiveconf var(s) mapped to spark.conf.get()",
+                "detail": f"All {len(hive_rv_norm)} hiveconf var(s) mapped to spark.conf.get()",
                 "score":  1.0,
             }
         else:

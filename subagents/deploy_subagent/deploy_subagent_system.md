@@ -56,7 +56,46 @@ Always end by calling `finish_deployment_tool`.
 
 ## Output Contract
 
+Pass the following structure to `finish_deployment_tool(result=...)`.
+Use the **exact key names** below — the frontend renders this directly.
+
+```json
+{
+  "pipeline":           "<name>",
+  "deployment_status":  "APPROVED|APPROVED_NON_PROD|CONDITIONAL|BLOCKED",
+  "blast_radius_count": <int>,
+  "upstream_migration_status": "<status string>",
+  "artifact_checks": {
+    "deployment_ready":       <bool — from validate_artifacts_tool>,
+    "all_artifacts_valid":    <bool>,
+    "file_checks":            { "<file.py>": {"status": "PASSED|FAILED", "detail": "..."} },
+    "dag_check":              {"status": "PASSED|FAILED", "detail": "..."},
+    "reconciliation_check":   {"status": "PASSED|FAILED", "detail": "..."}
+  },
+  "smoke_results": {
+    "overall": "PASSED|FAILED|WARNING",
+    "passed":  <int>,
+    "total":   <int>,
+    "score":   <int 0-100>,
+    "tests": [
+      {"name": "...", "status": "PASSED|FAILED|WARNING",
+       "detail": "...", "note": "...", "type": "real|simulated", "runtime": "0.00s"}
+    ]
+  },
+  "governance": {
+    "state":          "APPROVED|APPROVED_NON_PROD|CONDITIONAL|BLOCKED",
+    "label":          "...",
+    "readiness_score": <int 0-100 — from compute_governance_tool>,
+    "conditions":     ["..."],
+    "approver":       "SUPERVISOR · AUTO",
+    "policy_version": "v3.2"
+  },
+  "output": {
+    "output_dir":    "<path — from write_manifests_tool>",
+    "files_written": ["<file1>", "..."]
+  }
+}
 ```
-pipeline, deployment_status, readiness_score, governance, artifact_checks,
-smoke_results, cicd_config, output, upstream_migration_status, blast_radius_count
-```
+
+Set `deployment_status` equal to `governance.state`.
+`governance.readiness_score` comes from `compute_governance_tool`'s `readiness_score` field — copy it into the governance dict.

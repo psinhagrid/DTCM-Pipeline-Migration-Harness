@@ -6,3 +6,4 @@ neo4j>=5.26.0
 sqlfluff>=3.3.0
 python-dotenv>=1.0.0
 pyyaml>=6.0.0
+fast-rlm>=0.1.16

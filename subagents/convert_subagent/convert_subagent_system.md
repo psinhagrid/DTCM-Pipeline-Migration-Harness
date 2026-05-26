@@ -54,8 +54,34 @@ Always end by calling `finish_conversion_tool`.
 
 ## Output Contract
 
+Pass the following structure to `finish_conversion_tool(result=...)`.
+**All fields are required.** Do not summarize or drop any field.
+
+```json
+{
+  "pipeline":             "<name>",
+  "conversion_status":    "SUCCESS|HALTED|ERROR",
+  "source_language":      "HiveQL",
+  "target_language":      "PySpark",
+  "transformations_applied": <total int>,
+  "complexity":           "<band>",
+  "blast_radius_count":   <int>,
+  "files": [
+    {
+      "filename":                "<source>.hql",
+      "python_filename":         "<output>.py",
+      "source_hql":              "<full original HiveQL source — do NOT omit>",
+      "spark_python":            "<full generated PySpark code — do NOT omit>",
+      "transformations_applied": <int>,
+      "notes":                   ["..."]
+    }
+  ],
+  "dag":          "<full DAG Python source string>",
+  "dag_filename": "<pipeline>_dag.py",
+  "generated_files": ["<file1>.py", "...", "<pipeline>_dag.py"],
+  "artifact_path": "s3://dtcm-artifacts/wave1/<pipeline>/"
+}
 ```
-pipeline, conversion_status, source_language, target_language, files,
-dag, dag_filename, generated_files, artifact_path, transformations_applied,
-complexity, blast_radius_count
-```
+
+`source_hql` and `spark_python` are **mandatory** per file — they are used by
+the frontend code diff viewer. Never replace them with a summary or omit them.
