@@ -6,10 +6,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / ".env")
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
-from routes import stream, graph, skills as skills_router
+from routes import stream, graph, skills as skills_router, internal as internal_router
 from event_queue import resolve_user_input, _pending_input
 from orchestrator import (
     run_pipeline,
@@ -21,6 +22,96 @@ from orchestrator import (
 
 app = FastAPI(title="DTCM Pipeline API")
 
+
+def _tool_result_summary(tool: str, data: dict) -> str | None:
+    """Extract a one-line human-readable summary from a tool response."""
+    if "error" in data:
+        return f"✗ error: {data['error']}"
+    s = {
+        "scan-repo":           lambda d: f"{d.get('total_files', '?')} files found",
+        "parse-hql":           lambda d: f"{d.get('file', '?')} — {len(d.get('syntax_errors', []))} syntax errors, {len(d.get('udfs', []))} UDFs",
+        "lineage-extract":     lambda d: f"{len(d.get('upstream', []))} upstream, {len(d.get('downstream', []))} downstream",
+        "classify-complexity": lambda d: f"complexity={d.get('complexity', '?')}  effort={d.get('estimated_effort', '?')}  score={d.get('score', '?')}",
+        "neo4j-write":         lambda d: f"status={d.get('status', '?')}  nodes={d.get('nodes', '?')}  edges={d.get('edges', '?')}",
+        "query-graph":         lambda d: (
+            f"blast_radius={d.get('count', len(d.get('blast_radius', [])))} pipelines" if "blast_radius" in d
+            else f"wave={d.get('migration_wave', '?')}" if "migration_wave" in d
+            else f"complexity={d.get('complexity', '?')}  depends_on={len(d.get('depends_on', []))}  consumed_by={len(d.get('consumed_by', []))}"
+        ),
+        "transform-hql":       lambda d: f"{d.get('python_filename', '?')} — {d.get('transformations_applied', '?')} transformations",
+        "generate-dag":        lambda d: f"DAG written → {d.get('dag_filename', '?')}",
+        "validate-pyspark":    lambda d: f"valid={d.get('valid', '?')}  errors={len(d.get('errors', []))}  warnings={len(d.get('warnings', []))}",
+        "analyze-file":        lambda d: (
+            f"skipped — {d.get('reason', '')}" if d.get("skipped")
+            else f"similarity={d.get('overall_similarity', 0):.2f}  issues={len(d.get('issues', []))}"
+        ),
+        "workflow-parity":     lambda d: f"status={d.get('status', '?')}  score={d.get('score', '?')}",
+        "runtime-validation":  lambda d: (
+            "row_count={s}  checksum={c}  sla={l}  replay={r}".format(
+                s=d.get("row_count", {}).get("status", "?"),
+                c=d.get("checksum", {}).get("status", "?"),
+                l=d.get("sla_compliance", {}).get("status", "?"),
+                r=d.get("consumer_replay", {}).get("status", "?"),
+            )
+        ),
+        "compile-report":      lambda d: f"status={d.get('validation_status', '?')}  confidence={d.get('confidence_score', 0):.2f}  risk={d.get('migration_risk', '?')}",
+        "validate-artifacts":  lambda d: f"deployment_ready={d.get('deployment_ready', '?')}  all_valid={d.get('all_artifacts_valid', '?')}",
+        "generate-cicd":       lambda d: f"CI/CD YAML generated ({len(d.get('cicd_yaml', ''))} chars)",
+        "run-smoke-tests":     lambda d: f"overall={d.get('overall', '?')}  passed={d.get('passed', '?')}/{d.get('total', '?')}  score={d.get('score', '?')}",
+        "compute-governance":  lambda d: f"readiness={d.get('readiness_score', '?')}  state={d.get('governance', {}).get('state', '?')}",
+        "write-manifests":     lambda d: f"{d.get('file_count', '?')} files written → {d.get('output_dir', '?')}",
+    }
+    fn = s.get(tool)
+    try:
+        return fn(data) if fn else None
+    except Exception:
+        return None
+
+
+class ToolCallLogger(BaseHTTPMiddleware):
+    """Log every /internal/* call + result summary to the SSE stream."""
+    async def dispatch(self, request: Request, call_next):
+        if not (request.url.path.startswith("/internal/") and request.method == "POST"):
+            return await call_next(request)
+
+        tool_name = request.url.path.removeprefix("/internal/")
+        from event_queue import push
+        from starlette.responses import Response as StarletteResponse
+
+        if tool_name != "read-skill":
+            asyncio.create_task(push(
+                type="tool_call",
+                agent="rlm_agent",
+                message=f"⚙ {tool_name}",
+                pipeline="",
+            ))
+
+        response = await call_next(request)
+
+        # Buffer response so we can both read it and re-send it
+        body = b"".join([chunk async for chunk in response.body_iterator])
+
+        if tool_name != "read-skill":
+            try:
+                summary = _tool_result_summary(tool_name, json.loads(body))
+                if summary:
+                    asyncio.create_task(push(
+                        type="tool_result",
+                        agent="rlm_agent",
+                        message=f"  ↳ {summary}",
+                        pipeline="",
+                    ))
+            except Exception:
+                pass
+
+        return StarletteResponse(
+            content=body,
+            status_code=response.status_code,
+            headers=dict(response.headers),
+            media_type=response.media_type,
+        )
+
+app.add_middleware(ToolCallLogger)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:8080", "http://localhost:5173", "http://localhost:3000"],
@@ -32,6 +123,7 @@ app.add_middleware(
 app.include_router(stream.router)
 app.include_router(graph.router)
 app.include_router(skills_router.router)
+app.include_router(internal_router.router)
 
 PIPELINES_ROOT = Path("pipelines")
 OUTPUT_ROOT    = Path("output")

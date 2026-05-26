@@ -6,25 +6,17 @@ router = APIRouter(prefix="/skills-api")
 
 _ROOT = Path(__file__).parents[1]
 
-# All directories that contain skill .md files
 SKILL_DIRS: dict[str, Path] = {
-    "shared":      _ROOT / "skills",
-    "assess":      _ROOT / "subagents/assess_subagent/skills",
-    "convert":     _ROOT / "subagents/convert_subagent/skills",
-    "reconcile":   _ROOT / "subagents/reconcile_subagent/skills",
-    "deploy":      _ROOT / "subagents/deploy_subagent/skills",
-    "repair_code": _ROOT / "subagents/repair_code/skills",
+    "skills": _ROOT / "skills",
 }
 
 
 @router.get("")
 def list_skills():
-    """Return all skill files grouped by agent."""
-    result = {}
-    for agent, d in SKILL_DIRS.items():
-        if d.exists():
-            result[agent] = [f.name for f in sorted(d.glob("*.md"))]
-    return result
+    d = _ROOT / "skills"
+    if d.exists():
+        return {"skills": [f.name for f in sorted(d.glob("*.md"))]}
+    return {"skills": []}
 
 
 def _resolve(agent: str, filename: str) -> Path:

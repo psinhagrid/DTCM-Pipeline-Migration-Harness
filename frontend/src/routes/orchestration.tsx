@@ -120,7 +120,7 @@ function OrchestrationConsole() {
   const agentFilters = ["all", "supervisor", "assess_subagent", "convert_subagent", "reconcile_subagent", "deploy_subagent"];
 
   const filtered = (filter === "all" ? events : events.filter((e) => e.agent === filter))
-    .filter((e) => verbose || (e.type !== "tool_call" && e.type !== "hook"));
+    .filter((e) => verbose || (e.type !== "tool_call" && e.type !== "tool_result" && e.type !== "hook"));
 
   return (
     <AppShell>
@@ -307,9 +307,19 @@ function OrchestrationConsole() {
                 // ── Tool call (verbose only) ───────────────────────────────
                 if (ev.type === "tool_call") {
                   return (
-                    <div key={i} className="flex gap-3 py-0.5 px-2 group opacity-50">
+                    <div key={i} className="flex gap-3 py-0.5 px-2 group opacity-60">
                       <span className="text-muted-foreground/40 font-mono text-[11px] w-[70px] shrink-0">{formatTs(ev.timestamp)}</span>
-                      <span className="text-[11px] font-mono text-info/80 flex-1">{ev.message}</span>
+                      <span className="text-[11px] font-mono text-info flex-1">{ev.message}</span>
+                    </div>
+                  );
+                }
+
+                // ── Tool result (verbose only) ────────────────────────────
+                if (ev.type === "tool_result") {
+                  return (
+                    <div key={i} className="flex gap-3 py-0.5 px-2 group opacity-80">
+                      <span className="text-muted-foreground/40 font-mono text-[11px] w-[70px] shrink-0">{formatTs(ev.timestamp)}</span>
+                      <span className="text-[11px] font-mono text-muted-foreground flex-1">{ev.message}</span>
                     </div>
                   );
                 }
@@ -346,7 +356,7 @@ function OrchestrationConsole() {
             {connected ? "streaming" : "idle"}
           </span>
           <span>{events.length} total · {filtered.length} shown</span>
-          {!verbose && <span className="text-muted-foreground/60">tool calls + hooks hidden · toggle Verbose to show</span>}
+          {!verbose && <span className="text-muted-foreground/60">tool calls + results hidden · toggle Verbose to show</span>}
           {paused && <span className="text-warning ml-auto">● paused</span>}
         </div>
       </div>
