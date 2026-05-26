@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell, Badge } from "@/components/AppShell";
 import { useEffect, useState, useRef, useCallback } from "react";
-import { Network, GitBranch, Database, Cpu, ChevronRight, AlertCircle, RefreshCw, ListOrdered, Zap } from "lucide-react";
+import { Network, GitBranch, Database, Cpu, ChevronRight, AlertCircle, RefreshCw, ListOrdered, Zap, Layers, ChevronDown } from "lucide-react";
 
 export const Route = createFileRoute("/context-graph")({ component: ContextGraph });
 
@@ -32,6 +32,24 @@ interface Pipeline {
   udfs: string[];
   depends_on: string[];
   consumed_by: string[];
+}
+
+interface FullGraphNode {
+  id: string;
+  type: "Pipeline" | "Workflow" | "Job" | "Query" | "Table" | "UDF";
+  label: string;
+  properties: Record<string, unknown>;
+}
+interface FullGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  type: string;
+}
+interface FullGraph {
+  nodes: FullGraphNode[];
+  edges: FullGraphEdge[];
+  error?: string | null;
 }
 
 // ── Complexity colours ────────────────────────────────────────────────────────
@@ -96,13 +114,16 @@ function computeBlastRadius(pipelines: Pipeline[]): Map<string, number> {
 // ── Main component ────────────────────────────────────────────────────────────
 
 function ContextGraph() {
-  const [tab,         setTab]         = useState<"graph" | "plan">("graph");
-  const [data,        setData]        = useState<{ pipelines: Pipeline[]; error: string | null } | null>(null);
-  const [plan,        setPlan]        = useState<{ waves: Wave[]; total_pipelines: number; error: string | null } | null>(null);
-  const [selected,    setSelected]    = useState<Pipeline | null>(null);
-  const [loading,     setLoading]     = useState(true);
-  const [planLoading, setPlanLoading] = useState(false);
-  const [building,    setBuilding]    = useState(false);
+  const [tab,              setTab]              = useState<"graph" | "plan">("graph");
+  const [graphView,        setGraphView]        = useState<"pipeline" | "hierarchy">("pipeline");
+  const [data,             setData]             = useState<{ pipelines: Pipeline[]; error: string | null } | null>(null);
+  const [fullGraph,        setFullGraph]        = useState<FullGraph | null>(null);
+  const [plan,             setPlan]             = useState<{ waves: Wave[]; total_pipelines: number; error: string | null } | null>(null);
+  const [selected,         setSelected]         = useState<Pipeline | null>(null);
+  const [loading,          setLoading]          = useState(true);
+  const [fullGraphLoading, setFullGraphLoading] = useState(false);
+  const [planLoading,      setPlanLoading]      = useState(false);
+  const [building,         setBuilding]         = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
 
   const fetchGraph = useCallback(() => {
@@ -111,6 +132,14 @@ function ContextGraph() {
       .then((r) => r.json())
       .then((d) => { setData(d); setLoading(false); })
       .catch(() => { setData({ pipelines: [], error: "Could not reach backend" }); setLoading(false); });
+  }, []);
+
+  const fetchFullGraph = useCallback(() => {
+    setFullGraphLoading(true);
+    fetch("/full-graph")
+      .then((r) => r.json())
+      .then((d) => { setFullGraph(d); setFullGraphLoading(false); })
+      .catch(() => { setFullGraph({ nodes: [], edges: [], error: "Could not reach backend" }); setFullGraphLoading(false); });
   }, []);
 
   const fetchPlan = useCallback(() => {
@@ -123,13 +152,15 @@ function ContextGraph() {
 
   useEffect(() => { fetchGraph(); }, [fetchGraph]);
   useEffect(() => { if (tab === "plan" && !plan) fetchPlan(); }, [tab]);
+  useEffect(() => { if (graphView === "hierarchy" && !fullGraph) fetchFullGraph(); }, [graphView]);
 
   async function buildGraph() {
     setBuilding(true);
     await fetch("/build-graph", { method: "POST" }).catch(() => {});
     setBuilding(false);
     fetchGraph();
-    setPlan(null); // invalidate cached plan
+    setFullGraph(null); // invalidate so hierarchy re-fetches
+    setPlan(null);
   }
 
   const pipelines = data?.pipelines ?? [];
@@ -183,6 +214,19 @@ function ContextGraph() {
               </button>
             ))}
           </div>
+
+          {tab === "graph" && (
+            <div className="flex items-center gap-1 border border-border rounded-lg p-0.5 bg-surface-2/50">
+              {([["pipeline", "Pipeline DAG", Network], ["hierarchy", "Full Hierarchy", Layers]] as const).map(([id, label, Icon]) => (
+                <button key={id} onClick={() => setGraphView(id)}
+                  className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[13px] transition ${
+                    graphView === id ? "bg-white shadow-sm font-medium text-foreground" : "text-muted-foreground hover:text-foreground"
+                  }`}>
+                  <Icon className="h-3.5 w-3.5" />{label}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="ml-auto flex items-center gap-2">
             <Badge tone={pipelines.length > 0 ? "success" : "neutral"}>
@@ -333,8 +377,34 @@ function ContextGraph() {
           </div>
         )}
 
-        {tab === "graph" && !loading && pipelines.length > 0 && (
-          <div className="flex-1 flex overflow-hidden">
+        {/* ── Full Hierarchy view ──────────────────────────────────────────── */}
+        {tab === "graph" && graphView === "hierarchy" && (
+          <div className="flex-1 overflow-y-auto p-6">
+            {fullGraphLoading && (
+              <div className="flex items-center justify-center h-40 text-muted-foreground">
+                <Cpu className="h-5 w-5 animate-spin mr-2" /> Loading hierarchy…
+              </div>
+            )}
+            {!fullGraphLoading && fullGraph?.error && (
+              <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground h-40">
+                <AlertCircle className="h-8 w-8 text-warning" />
+                <p className="text-[14px]">{fullGraph.error}</p>
+              </div>
+            )}
+            {!fullGraphLoading && !fullGraph?.error && fullGraph && (
+              <HierarchyView graph={fullGraph} />
+            )}
+            {!fullGraphLoading && !fullGraph && (
+              <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground h-40">
+                <Layers className="h-8 w-8 opacity-30" />
+                <p className="text-[14px]">Click Build Graph to populate the hierarchy.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === "graph" && graphView === "pipeline" && !loading && pipelines.length > 0 && (
+          <div className="flex-1 flex overflow-hidden" style={{ display: graphView === "hierarchy" ? "none" : undefined }}>
             {/* DAG canvas */}
             <div className="flex-1 overflow-auto bg-surface-2/30 relative">
               <div className="absolute left-0 top-0 bottom-0 w-16 pointer-events-none">
@@ -472,6 +542,349 @@ function ContextGraph() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+// ── Node type styling ─────────────────────────────────────────────────────────
+
+const nodeTypeColor: Record<string, string> = {
+  Pipeline: "text-info border-info/30 bg-info/8",
+  Workflow: "text-purple-600 border-purple-300 bg-purple-50",
+  Job:      "text-warning border-warning/30 bg-warning/8",
+  Query:    "text-teal-600 border-teal-300 bg-teal-50",
+  Table:    "text-success border-success/30 bg-success/8",
+  UDF:      "text-orange-600 border-orange-300 bg-orange-50",
+};
+
+const nodeTypeDot: Record<string, string> = {
+  Pipeline: "bg-info",
+  Workflow: "bg-purple-500",
+  Job:      "bg-warning",
+  Query:    "bg-teal-500",
+  Table:    "bg-success",
+  UDF:      "bg-orange-500",
+};
+
+// ── Hierarchy view component ──────────────────────────────────────────────────
+
+function HierarchyView({ graph }: { graph: FullGraph }) {
+  const [openPipelines, setOpenPipelines] = useState<Set<string>>(new Set());
+  const [openJobs,      setOpenJobs]      = useState<Set<string>>(new Set());
+  const [selectedNode,  setSelectedNode]  = useState<FullGraphNode | null>(null);
+
+  function selectNode(n: FullGraphNode, e: React.MouseEvent) {
+    e.stopPropagation();
+    setSelectedNode((prev) => prev?.id === n.id ? null : n);
+  }
+
+  const nodeMap = new Map(graph.nodes.map((n) => [n.id, n]));
+
+  // Build parent→children map for CONTAINS / HAS_JOB / HAS_QUERY
+  const children = new Map<string, string[]>();
+  for (const e of graph.edges) {
+    if (["CONTAINS", "HAS_JOB", "HAS_QUERY"].includes(e.type)) {
+      if (!children.has(e.source)) children.set(e.source, []);
+      children.get(e.source)!.push(e.target);
+    }
+  }
+
+  // Build Query→{reads, writes} from READS/WRITES edges
+  const queryTables = new Map<string, { reads: string[]; writes: string[] }>();
+  for (const e of graph.edges) {
+    if (e.type === "READS" || e.type === "WRITES") {
+      const srcNode = nodeMap.get(e.source);
+      if (srcNode?.type === "Query") {
+        if (!queryTables.has(e.source)) queryTables.set(e.source, { reads: [], writes: [] });
+        const tgt = nodeMap.get(e.target);
+        if (tgt) {
+          if (e.type === "READS") queryTables.get(e.source)!.reads.push(tgt.label);
+          else                    queryTables.get(e.source)!.writes.push(tgt.label);
+        }
+      }
+    }
+  }
+
+  // Build Job→dep job labels
+  const jobDeps = new Map<string, string[]>();
+  for (const e of graph.edges) {
+    if (e.type === "DEPENDS_ON") {
+      const src = nodeMap.get(e.source);
+      const tgt = nodeMap.get(e.target);
+      if (src?.type === "Job" && tgt?.type === "Job") {
+        if (!jobDeps.has(e.source)) jobDeps.set(e.source, []);
+        jobDeps.get(e.source)!.push(tgt.label);
+      }
+    }
+  }
+
+  // Pipeline→UDFs
+  const pipelineUdfs = new Map<string, string[]>();
+  for (const e of graph.edges) {
+    if (e.type === "USES_UDF") {
+      const src = nodeMap.get(e.source);
+      const tgt = nodeMap.get(e.target);
+      if (src?.type === "Pipeline" && tgt?.type === "UDF") {
+        if (!pipelineUdfs.has(e.source)) pipelineUdfs.set(e.source, []);
+        pipelineUdfs.get(e.source)!.push(tgt.label);
+      }
+    }
+  }
+
+  const pipelines = graph.nodes.filter((n) => n.type === "Pipeline")
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  const totalNodes = graph.nodes.length;
+  const totalEdges = graph.edges.length;
+
+  function togglePipeline(id: string) {
+    setOpenPipelines((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  }
+  function toggleJob(id: string) {
+    setOpenJobs((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  }
+
+  return (
+    <div className="flex gap-4 items-start">
+    {/* Main tree */}
+    <div className={`space-y-3 transition-all ${selectedNode ? "flex-1 min-w-0" : "max-w-4xl mx-auto w-full"}`}>
+      {/* Summary */}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        {(["Pipeline","Workflow","Job","Query","Table","UDF"] as const).map((t) => {
+          const count = graph.nodes.filter((n) => n.type === t).length;
+          if (!count) return null;
+          return (
+            <span key={t} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-mono border ${nodeTypeColor[t]}`}>
+              <span className={`h-2 w-2 rounded-full ${nodeTypeDot[t]}`} />
+              {count} {t}{count !== 1 ? "s" : ""}
+            </span>
+          );
+        })}
+        <span className="ml-auto text-[12px] font-mono text-muted-foreground">{totalNodes} nodes · {totalEdges} edges</span>
+      </div>
+
+      {pipelines.map((p) => {
+        const isOpen = openPipelines.has(p.id);
+        const props  = p.properties as Record<string, string>;
+        const complexity = props.complexity ?? null;
+        const effort     = props.estimated_effort ?? null;
+        const wfIds  = children.get(p.id) ?? [];
+        const wf     = wfIds.length ? nodeMap.get(wfIds[0]) : null;
+        const jobIds = wf ? (children.get(wf.id) ?? []) : [];
+        const udfs   = pipelineUdfs.get(p.id) ?? [];
+
+        return (
+          <div key={p.id} className="rounded-xl border border-border bg-white overflow-hidden">
+            {/* Pipeline header */}
+            <button
+              className={`w-full flex items-center gap-3 px-5 py-3.5 hover:bg-surface-2/40 transition text-left ${selectedNode?.id === p.id ? "bg-info/5 ring-1 ring-inset ring-info/30" : ""}`}
+              onClick={(e) => { togglePipeline(p.id); selectNode(p, e); }}
+            >
+              <ChevronDown className={`h-4 w-4 text-muted-foreground shrink-0 transition-transform ${isOpen ? "" : "-rotate-90"}`} />
+              <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${nodeTypeDot.Pipeline}`} />
+              <span className="text-[14px] font-semibold text-foreground font-mono flex-1">{p.label}</span>
+              <div className="flex items-center gap-2">
+                {complexity && (
+                  <Badge tone={complexity === "SMALL" ? "success" : complexity === "MEDIUM" ? "info" : complexity === "LARGE" ? "warning" : "danger"}>
+                    {complexity}
+                  </Badge>
+                )}
+                {effort && <span className="text-[12px] text-muted-foreground font-mono">{effort}</span>}
+                {udfs.length > 0 && (
+                  <span className={`text-[11px] px-2 py-0.5 rounded border font-mono ${nodeTypeColor.UDF}`}>
+                    {udfs.length} UDF{udfs.length > 1 ? "s" : ""}
+                  </span>
+                )}
+                <span className="text-[12px] text-muted-foreground font-mono ml-1">
+                  {jobIds.length} job{jobIds.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+            </button>
+
+            {isOpen && (
+              <div className="border-t border-border">
+                {/* Workflow row */}
+                {wf && (
+                  <div
+                    className={`flex items-center gap-2 px-7 py-2 bg-purple-50/60 border-b border-purple-100 cursor-pointer hover:bg-purple-100/60 transition ${selectedNode?.id === wf.id ? "ring-1 ring-inset ring-purple-400" : ""}`}
+                    onClick={(e) => selectNode(wf, e)}
+                  >
+                    <span className={`h-2 w-2 rounded-full shrink-0 ${nodeTypeDot.Workflow}`} />
+                    <span className="text-[12px] font-mono text-purple-700">Workflow: {wf.label}</span>
+                  </div>
+                )}
+
+                {/* Jobs */}
+                <div className="divide-y divide-border/60">
+                  {jobIds.map((jid) => {
+                    const j = nodeMap.get(jid);
+                    if (!j) return null;
+                    const jobOpen = openJobs.has(jid);
+                    const qids    = children.get(jid) ?? [];
+                    const deps    = jobDeps.get(jid) ?? [];
+
+                    return (
+                      <div key={jid}>
+                        {/* Job row */}
+                        <button
+                          className={`w-full flex items-center gap-2 px-9 py-2.5 hover:bg-surface-2/30 transition text-left ${selectedNode?.id === jid ? "bg-warning/5 ring-1 ring-inset ring-warning/40" : ""}`}
+                          onClick={(e) => { toggleJob(jid); selectNode(j, e); }}
+                        >
+                          <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform ${jobOpen ? "" : "-rotate-90"}`} />
+                          <span className={`h-2 w-2 rounded-full shrink-0 ${nodeTypeDot.Job}`} />
+                          <span className="text-[13px] font-mono text-warning font-medium flex-1">{j.label}</span>
+                          <div className="flex items-center gap-2">
+                            {deps.length > 0 && (
+                              <span className="text-[11px] font-mono text-muted-foreground">
+                                depends on: {deps.join(", ")}
+                              </span>
+                            )}
+                            <span className="text-[11px] font-mono text-muted-foreground">
+                              {qids.length} quer{qids.length !== 1 ? "ies" : "y"}
+                            </span>
+                          </div>
+                        </button>
+
+                        {/* Queries */}
+                        {jobOpen && qids.map((qid, qi) => {
+                          const q = nodeMap.get(qid);
+                          if (!q) return null;
+                          const tables = queryTables.get(qid) ?? { reads: [], writes: [] };
+
+                          return (
+                            <div
+                              key={qid}
+                              className={`px-14 py-2.5 bg-teal-50/30 border-t border-teal-100/60 cursor-pointer hover:bg-teal-50/60 transition ${selectedNode?.id === qid ? "ring-1 ring-inset ring-teal-400" : ""}`}
+                              onClick={(e) => selectNode(q, e)}
+                            >
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className={`h-1.5 w-1.5 rounded-full ${nodeTypeDot.Query}`} />
+                                <span className={`text-[11px] px-1.5 py-0.5 rounded border font-mono ${nodeTypeColor.Query}`}>
+                                  {q.label}
+                                </span>
+                                <span className="text-[11px] text-muted-foreground font-mono">stmt {qi}</span>
+                                {(q.properties.join_count as number) > 0 && (
+                                  <span className="text-[11px] text-muted-foreground font-mono">{q.properties.join_count as number} join{(q.properties.join_count as number) > 1 ? "s" : ""}</span>
+                                )}
+                                {q.properties.uses_window && (
+                                  <span className="text-[11px] font-mono text-purple-600">window fn</span>
+                                )}
+                              </div>
+                              <div className="flex flex-wrap gap-3">
+                                {tables.reads.length > 0 && (
+                                  <div className="flex flex-wrap items-center gap-1">
+                                    <span className="text-[10px] font-mono text-muted-foreground uppercase">reads</span>
+                                    {tables.reads.map((t) => {
+                                      const tNode = graph.nodes.find((n) => n.type === "Table" && n.label === t);
+                                      return (
+                                        <span key={t}
+                                          className={`text-[11px] px-1.5 py-0.5 rounded border font-mono cursor-pointer hover:opacity-80 ${nodeTypeColor.Table} ${selectedNode?.label === t && selectedNode?.type === "Table" ? "ring-1 ring-success" : ""}`}
+                                          onClick={(e) => { if (tNode) selectNode(tNode, e); }}
+                                        >{t}</span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                {tables.writes.length > 0 && (
+                                  <div className="flex flex-wrap items-center gap-1">
+                                    <span className="text-[10px] font-mono text-muted-foreground uppercase">writes</span>
+                                    {tables.writes.map((t) => {
+                                      const tNode = graph.nodes.find((n) => n.type === "Table" && n.label === t);
+                                      return (
+                                        <span key={t}
+                                          className={`text-[11px] px-1.5 py-0.5 rounded border font-mono cursor-pointer hover:opacity-80 ${nodeTypeColor.Table} ${selectedNode?.label === t && selectedNode?.type === "Table" ? "ring-1 ring-success" : ""}`}
+                                          onClick={(e) => { if (tNode) selectNode(tNode, e); }}
+                                        >{t}</span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Pipeline UDFs */}
+                {udfs.length > 0 && (
+                  <div className="flex items-center gap-2 flex-wrap px-7 py-2.5 bg-orange-50/40 border-t border-orange-100">
+                    <GitBranch className="h-3.5 w-3.5 text-orange-500 shrink-0" />
+                    <span className="text-[11px] font-mono text-muted-foreground uppercase mr-1">UDFs</span>
+                    {udfs.map((u) => {
+                      const uNode = graph.nodes.find((n) => n.type === "UDF" && n.label === u);
+                      return (
+                        <span key={u}
+                          className={`text-[11px] px-1.5 py-0.5 rounded border font-mono cursor-pointer hover:opacity-80 ${nodeTypeColor.UDF} ${selectedNode?.label === u && selectedNode?.type === "UDF" ? "ring-1 ring-orange-400" : ""}`}
+                          onClick={(e) => { if (uNode) selectNode(uNode, e); }}
+                        >{u}</span>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+
+    {/* ── Node detail panel ──────────────────────────────────────────────── */}
+    {selectedNode && (
+      <div className="w-72 shrink-0 rounded-xl border border-border bg-white overflow-hidden sticky top-0 self-start">
+        {/* Panel header */}
+        <div className={`flex items-center gap-2 px-4 py-3 border-b border-border ${nodeTypeColor[selectedNode.type]}`}>
+          <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${nodeTypeDot[selectedNode.type]}`} />
+          <span className="text-[12px] font-mono font-semibold flex-1 truncate">{selectedNode.label}</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${nodeTypeColor[selectedNode.type]}`}>
+            {selectedNode.type}
+          </span>
+          <button
+            onClick={() => setSelectedNode(null)}
+            className="ml-1 text-muted-foreground hover:text-foreground text-base leading-none shrink-0"
+          >×</button>
+        </div>
+
+        {/* Properties */}
+        <div className="overflow-y-auto max-h-[70vh]">
+          {Object.entries(selectedNode.properties).length === 0 ? (
+            <p className="px-4 py-3 text-[12px] text-muted-foreground font-mono">No properties</p>
+          ) : (
+            <table className="w-full text-[12px]">
+              <tbody>
+                {Object.entries(selectedNode.properties).map(([k, v]) => {
+                  const display = v === null || v === undefined
+                    ? <span className="text-muted-foreground/50">null</span>
+                    : typeof v === "boolean"
+                    ? <span className={v ? "text-success font-semibold" : "text-muted-foreground"}>{String(v)}</span>
+                    : typeof v === "object"
+                    ? <span className="text-muted-foreground font-mono">{JSON.stringify(v)}</span>
+                    : String(v).length > 120
+                    ? <span className="text-foreground/80 font-mono break-all">{String(v).slice(0, 120)}…</span>
+                    : <span className="text-foreground/80 font-mono break-all">{String(v)}</span>;
+
+                  return (
+                    <tr key={k} className="border-b border-border/50 hover:bg-surface-2/30">
+                      <td className="px-3 py-1.5 text-muted-foreground font-mono align-top whitespace-nowrap pr-2 w-1/3">{k}</td>
+                      <td className="px-3 py-1.5 align-top">{display}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+
+          {/* Neo4j element ID */}
+          <div className="px-3 py-2 border-t border-border/50">
+            <p className="text-[10px] text-muted-foreground/50 font-mono truncate" title={selectedNode.id}>
+              id: {selectedNode.id}
+            </p>
+          </div>
+        </div>
+      </div>
+    )}
+    </div>
   );
 }
 

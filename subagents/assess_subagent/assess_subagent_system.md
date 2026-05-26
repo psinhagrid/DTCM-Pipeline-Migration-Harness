@@ -17,16 +17,40 @@ Call `read_skill_tool(name)` to load a skill's full instructions before using it
 |---|---|
 | `repo_scan` | How to discover pipeline files, parse HiveQL, and extract lineage |
 | `complexity_classification` | How to score migration complexity and identify risk patterns |
+| `graph_population` | How to populate the full 5-tier Neo4j graph hierarchy |
 
 ---
 
 ## How to Work
 
-1. Read relevant skills with `read_skill_tool`
-2. Scan repo → parse each HQL file → extract lineage → classify complexity
-3. **After `lineage_extract_tool` returns:** call `query_graph_tool(pipeline, "blast_radius")` and `query_graph_tool(pipeline, "wave")` — include both in the final result. If Neo4j is unavailable, proceed without them.
-4. Write to Neo4j with `neo4j_write_graph_tool`
-5. Call `finish_assessment_tool` with the complete result
+1. Read relevant skills with `read_skill_tool` — load `repo_scan`, `complexity_classification`, and `graph_population` before starting.
+2. Scan repo → parse **each** HQL file (call `parse_hql_tool` once per file) → accumulate all results.
+3. Extract lineage with `lineage_extract_tool`.
+4. Classify complexity with `classify_complexity_tool`.
+5. **After `lineage_extract_tool` returns:** call `query_graph_tool(pipeline, "blast_radius")` and `query_graph_tool(pipeline, "wave")`. If Neo4j is unavailable, proceed without them.
+6. Write to Neo4j with `neo4j_write_graph_tool` — pass the full `jobs` list (all `parse_hql_tool` results, each with its `queries` field) plus lineage and complexity data.
+7. Call `finish_assessment_tool` with the complete result.
+
+### Building the jobs list for neo4j_write_graph_tool
+
+Collect one entry per HQL file from each `parse_hql_tool` result:
+```
+jobs = [
+  {
+    "filename":       "<file>.hql",        # from parse_hql_tool result
+    "read_tables":    [...],               # list (was a set — already serialised)
+    "written_tables": [...],
+    "created_tables": [...],
+    "queries":        [...]                # per-statement breakdown from parse_hql_tool
+  },
+  ...
+]
+```
+Pass `jobs` directly to `neo4j_write_graph_tool`. The tool will:
+- Create one `Job` node per HQL file under the pipeline's `Workflow`
+- Create one `Query` node per DML statement within each job
+- Link `Query` nodes to `Table` nodes via READS / WRITES
+- Auto-detect intra-pipeline `Job-[:DEPENDS_ON]->Job` edges where one job writes a table another reads
 
 ---
 

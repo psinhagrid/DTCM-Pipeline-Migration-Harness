@@ -128,11 +128,53 @@ SQL: `JOIN compliance.blacklist_merchants bl ON t.merchant_id = bl.id`
 - **Empty downstream**: terminal sink, nothing breaks downstream if this fails
 - **`downstream` count ≥ 3**: high blast radius — note prominently in the result
 
-### After lineage is extracted
+---
 
-Pass to `neo4j_write_graph_tool`:
-- `upstream_tables` ← lineage.upstream
-- `output_tables` ← lineage.output_tables
+## Graph Population — Node Hierarchy
+
+After scanning, each `parse_hql_tool` result must be passed verbatim as a `jobs` entry to `neo4j_write_graph_tool`. The tool builds a 5-tier hierarchy:
+
+```
+Pipeline  (one per pipeline directory)
+  └─[:CONTAINS]─▶ Workflow  (one per pipeline, named "{pipeline}_workflow")
+                    └─[:HAS_JOB]─▶ Job  (one per .hql file)
+                                    └─[:HAS_QUERY]─▶ Query  (one per DML statement)
+                                                      ├─[:READS]─▶  Table
+                                                      └─[:WRITES]─▶ Table
+```
+
+Cross-links written automatically:
+- `Job -[:DEPENDS_ON]-> Job` — intra-pipeline: when JobB reads a table that JobA writes within the same pipeline
+- `Pipeline -[:DEPENDS_ON]-> Pipeline` — inter-pipeline: cross-pipeline consumer chains
+- `Pipeline -[:READS/WRITES]-> Table` — aggregate edges (backward-compat for graph API queries)
+- `Pipeline -[:USES_UDF]-> UDF`
+
+### jobs list construction
+
+Collect one dict per HQL file from `parse_hql_tool` results:
+```
+{
+  "filename":       "ingest_currency_rates.hql",
+  "read_tables":    ["external.raw_currency_feed"],
+  "written_tables": ["bronze.currency_rates"],
+  "created_tables": [],
+  "queries": [
+    {
+      "query_index":    0,
+      "query_type":     "INSERT_OVERWRITE",
+      "query_text":     "INSERT OVERWRITE TABLE ...",
+      "read_tables":    ["external.raw_currency_feed"],
+      "written_tables": ["bronze.currency_rates"],
+      "join_count":     0,
+      "subquery_count": 0,
+      "uses_window":    false,
+      "uses_udf":       false
+    }
+  ]
+}
+```
+
+`parse_hql_tool` already returns the `queries` field — include it unchanged in the jobs list.
 - `downstream` ← lineage.downstream
 - `udfs` ← aggregated from all parse_hql_tool results
 - `complexity` + `estimated_effort` ← from classify_complexity_tool

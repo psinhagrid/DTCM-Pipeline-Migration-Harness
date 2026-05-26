@@ -133,13 +133,53 @@ TOOLS = [
     {
         "name": "neo4j_write_graph_tool",
         "description": (
-            "Write the pipeline lineage graph to Neo4j. "
-            "Call after lineage_extract_tool and classify_complexity_tool. "
-            "Pass all lineage data collected from prior tool results."
+            "Write the full pipeline lineage graph to Neo4j. "
+            "Creates a 5-tier hierarchy: Pipeline → Workflow → Job → Query → Table. "
+            "Also creates intra-pipeline Job-[:DEPENDS_ON]->Job edges and "
+            "cross-pipeline Pipeline-[:DEPENDS_ON]->Pipeline edges. "
+            "Call after all parse_hql_tool calls, lineage_extract_tool, and classify_complexity_tool. "
+            "Pass the jobs list built from all parse_hql_tool results."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
+                "jobs": {
+                    "type": "array",
+                    "description": (
+                        "One entry per HQL file. Each entry is the parse_hql_tool result "
+                        "for that file, including its 'queries' list. "
+                        "Fields: filename, read_tables, written_tables, created_tables, queries. "
+                        "queries items: query_index, query_type, query_text, read_tables, "
+                        "written_tables, join_count, subquery_count, uses_window, uses_udf."
+                    ),
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "filename":       {"type": "string"},
+                            "read_tables":    {"type": "array", "items": {"type": "string"}},
+                            "written_tables": {"type": "array", "items": {"type": "string"}},
+                            "created_tables": {"type": "array", "items": {"type": "string"}},
+                            "queries": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "query_index":    {"type": "integer"},
+                                        "query_type":     {"type": "string"},
+                                        "query_text":     {"type": "string"},
+                                        "read_tables":    {"type": "array", "items": {"type": "string"}},
+                                        "written_tables": {"type": "array", "items": {"type": "string"}},
+                                        "join_count":     {"type": "integer"},
+                                        "subquery_count": {"type": "integer"},
+                                        "uses_window":    {"type": "boolean"},
+                                        "uses_udf":       {"type": "boolean"},
+                                    },
+                                },
+                            },
+                        },
+                        "required": ["filename"],
+                    },
+                },
                 "upstream_tables": {
                     "type": "array", "items": {"type": "string"},
                     "description": "Tables this pipeline reads but does not create (from lineage_extract_tool)",
@@ -165,7 +205,7 @@ TOOLS = [
                     "description": "Effort estimate from classify_complexity_tool",
                 },
             },
-            "required": ["upstream_tables", "output_tables", "downstream", "udfs", "complexity"],
+            "required": ["jobs", "upstream_tables", "output_tables", "downstream", "udfs", "complexity"],
         },
     },
     {
@@ -236,7 +276,9 @@ async def _execute_tool(name: str, args: dict, pipeline_dir: Path) -> dict:
     elif name == "parse_hql_tool":
         path = pipeline_dir / args["filename"]
         raw  = await asyncio.to_thread(parse_hql_tool, path)
-        return {k: sorted(v) if isinstance(v, set) else v for k, v in raw.items()}
+        return {k: sorted(v) if isinstance(v, set) else v for k, v in raw.items() if k != "queries"} | {
+            "queries": raw.get("queries", [])
+        }
 
     elif name == "lineage_extract_tool":
         raw = await asyncio.to_thread(
@@ -269,6 +311,7 @@ async def _execute_tool(name: str, args: dict, pipeline_dir: Path) -> dict:
     elif name == "neo4j_write_graph_tool":
         result = neo4j_write_graph_tool(
             pipeline=pipeline_dir.name,
+            jobs=args.get("jobs", []),
             upstream_tables=args.get("upstream_tables", []),
             output_tables=args.get("output_tables", []),
             downstream=args.get("downstream", []),

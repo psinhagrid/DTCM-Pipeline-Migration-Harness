@@ -137,6 +137,83 @@ def query_all_pipelines() -> list[dict]:
         return []
 
 
+def query_full_graph() -> dict:
+    """
+    Fetch the complete 5-tier hierarchy from Neo4j.
+
+    Returns:
+        {
+          "nodes": [{"id": str, "type": str, "label": str, "properties": dict}, ...],
+          "edges": [{"id": str, "source": str, "target": str, "type": str}, ...]
+        }
+
+    Node types: Pipeline, Workflow, Job, Query, Table, UDF
+    Edge types: CONTAINS, HAS_JOB, HAS_QUERY, READS, WRITES,
+                DEPENDS_ON, USES_UDF
+    """
+    try:
+        node_rows = _run("""
+            MATCH (n)
+            WHERE n:Pipeline OR n:Workflow OR n:Job OR n:Query
+               OR n:Table    OR n:UDF
+            RETURN
+                elementId(n)    AS eid,
+                labels(n)[0]    AS type,
+                properties(n)   AS props
+        """)
+
+        edge_rows = _run("""
+            MATCH (a)-[r]->(b)
+            WHERE (a:Pipeline OR a:Workflow OR a:Job OR a:Query OR a:Table OR a:UDF)
+              AND (b:Pipeline OR b:Workflow OR b:Job OR b:Query OR b:Table OR b:UDF)
+            RETURN
+                elementId(r)    AS eid,
+                elementId(a)    AS source,
+                elementId(b)    AS target,
+                type(r)         AS type
+        """)
+
+        def _label(node_type: str, props: dict) -> str:
+            """Human-readable label for each node type."""
+            if node_type == "Pipeline":
+                return props.get("name", "")
+            if node_type == "Workflow":
+                return props.get("name", "").replace("_workflow", "")
+            if node_type == "Job":
+                return props.get("job_name", props.get("filename", ""))
+            if node_type == "Query":
+                return props.get("query_type", "Query")
+            if node_type == "Table":
+                return props.get("name", "")
+            if node_type == "UDF":
+                return props.get("name", "")
+            return props.get("name", node_type)
+
+        nodes = [
+            {
+                "id":         r["eid"],
+                "type":       r["type"],
+                "label":      _label(r["type"], r["props"]),
+                "properties": dict(r["props"]),
+            }
+            for r in node_rows
+        ]
+
+        edges = [
+            {
+                "id":     r["eid"],
+                "source": r["source"],
+                "target": r["target"],
+                "type":   r["type"],
+            }
+            for r in edge_rows
+        ]
+
+        return {"nodes": nodes, "edges": edges}
+    except Exception as e:
+        return {"nodes": [], "edges": [], "error": str(e)}
+
+
 def compute_migration_plan(pipelines: list[dict] | None = None) -> list[dict]:
     """
     Compute the recommended migration wave order from the pipeline graph.

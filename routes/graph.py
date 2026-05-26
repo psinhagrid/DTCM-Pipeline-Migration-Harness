@@ -2,7 +2,7 @@ import asyncio
 import os
 from pathlib import Path
 from fastapi import APIRouter
-from graph.client import query_all_pipelines, compute_migration_plan
+from graph.client import query_all_pipelines, query_full_graph, compute_migration_plan
 
 router = APIRouter()
 
@@ -46,6 +46,7 @@ async def build_graph():
         all_reads = set(); all_creates = set(); all_writes = set()
         all_udfs = set(); has_window = False; total_subq = 0
         has_dyn_part = False; cross_db = set()
+        jobs: list[dict] = []
 
         for hql in hql_files:
             f = await asyncio.to_thread(parse_file, hql)
@@ -54,6 +55,13 @@ async def build_graph():
             has_window    = has_window or f["has_window"]
             total_subq   += f["subqueries"];    has_dyn_part = has_dyn_part or f["has_dyn_part"]
             cross_db     |= set(f["cross_db_joins"])
+            jobs.append({
+                "filename":       f["file"],
+                "read_tables":    sorted(f["read_tables"]),
+                "written_tables": sorted(f["written_tables"]),
+                "created_tables": sorted(f["created_tables"]),
+                "queries":        f.get("queries", []),
+            })
 
         all_tables = all_reads | all_creates | all_writes
         lineage = await asyncio.to_thread(lineage_extract_tool, all_reads, all_creates, all_writes, pipeline_dir)
@@ -62,6 +70,7 @@ async def build_graph():
 
         neo = neo4j_write_graph_tool(
             pipeline=name,
+            jobs=jobs,
             upstream_tables=lineage["upstream"],
             output_tables=lineage["output_tables"],
             downstream=lineage["downstream"],
@@ -81,11 +90,35 @@ async def build_graph():
 
 @router.get("/graph")
 def get_graph():
-    """Full pipeline lineage graph from Neo4j."""
+    """Pipeline-level lineage graph from Neo4j (backward-compat)."""
     try:
         return {"pipelines": query_all_pipelines(), "error": None}
     except Exception as e:
         return {"pipelines": [], "error": str(e)}
+
+
+@router.get("/full-graph")
+def get_full_graph():
+    """
+    Full 5-tier hierarchy graph from Neo4j.
+
+    Returns all node types (Pipeline, Workflow, Job, Query, Table, UDF)
+    and all relationship types (CONTAINS, HAS_JOB, HAS_QUERY, READS,
+    WRITES, DEPENDS_ON, USES_UDF) as generic nodes/edges lists.
+
+    Response shape:
+        {
+          "nodes": [{"id", "type", "label", "properties"}, ...],
+          "edges": [{"id", "source", "target", "type"}, ...],
+          "error": null | str
+        }
+    """
+    result = query_full_graph()
+    return {
+        "nodes": result.get("nodes", []),
+        "edges": result.get("edges", []),
+        "error": result.get("error", None),
+    }
 
 
 @router.get("/migration-plan")

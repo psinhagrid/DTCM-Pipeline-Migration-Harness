@@ -76,6 +76,13 @@ RE_PARTITION_BY = re.compile(r'\bPARTITIONED\s+BY\s*\(([^)]+)\)', re.I)
 RE_DYN_PART     = re.compile(r'\bPARTITION\s*\([^)]*\$\{hiveconf:', re.I)
 RE_CROSS_DB     = re.compile(r'\b(?:FROM|JOIN)\s+(\w+)\.(\w+)\b', re.I)
 RE_COLUMNS_SEL  = re.compile(r'\bSELECT\b(.*?)\bFROM\b', re.I | re.DOTALL)
+RE_JOIN_KW      = re.compile(r'\bJOIN\b', re.I)
+
+# ── Statement-level meta keywords to skip ───────────────────────────────────
+_META_FIRST_WORDS = frozenset([
+    "SET", "USE", "SHOW", "DESCRIBE", "DESC", "ADD", "MSCK",
+    "ANALYZE", "EXPLAIN", "LOAD",
+])
 
 # ── Complexity scoring ──────────────────────────────────────────────────────
 # TODO: verify weights + band thresholds with migration team.
@@ -117,6 +124,72 @@ def strip_comments(sql: str) -> str:
     sql = re.sub(r'--[^\n]*', ' ', sql)
     sql = re.sub(r'/\*.*?\*/', ' ', sql, flags=re.DOTALL)
     return sql
+
+
+def _classify_query_type(stmt: str) -> str:
+    """Return a QueryType string for a single SQL statement."""
+    s = stmt.upper().lstrip()
+    if "INSERT OVERWRITE" in s:
+        return "INSERT_OVERWRITE"
+    if "INSERT INTO" in s:
+        return "INSERT_INTO"
+    if re.search(r"CREATE\s+(?:EXTERNAL\s+)?TABLE\b.*\bAS\b.*\bSELECT\b", s, re.DOTALL):
+        return "CREATE_TABLE_AS"
+    if re.search(r"\bMERGE\s+INTO\b", s):
+        return "MERGE"
+    if s.startswith("SELECT") or s.startswith("WITH"):
+        return "SELECT"
+    return "OTHER"
+
+
+def split_statements(sql: str) -> list[dict]:
+    """
+    Split a stripped SQL string into individual DML statements.
+
+    Skips meta-only statements (SET, USE, SHOW …).
+    Returns a list of dicts with:
+        query_type       — INSERT_OVERWRITE | INSERT_INTO | CREATE_TABLE_AS | MERGE | SELECT | OTHER
+        query_text       — the statement text (truncated to 2 000 chars for graph storage)
+        read_tables      — list of tables read
+        written_tables   — list of tables written/created
+        join_count       — number of JOIN keywords
+        subquery_count   — number of sub-SELECTs
+        uses_window      — True if OVER ( present
+        uses_udf         — True if any UDF calls detected
+    """
+    parts = sql.split(";")
+    results = []
+    for idx, part in enumerate(parts):
+        stmt = part.strip()
+        if not stmt:
+            continue
+        first_word = stmt.split()[0].upper() if stmt.split() else ""
+        if first_word in _META_FIRST_WORDS:
+            continue
+
+        qt = _classify_query_type(stmt)
+        if qt == "OTHER":
+            continue  # skip DDL-only / unknown statements
+
+        read_tbl   = sorted({m.group(1).lower() for m in RE_TABLE_READ.finditer(stmt)})
+        write_tbl  = sorted({m.group(1).lower() for m in RE_TABLE_WRITE.finditer(stmt)}
+                            | {m.group(1).lower() for m in RE_TABLE_CREATE.finditer(stmt)})
+        all_fns    = {m.group(1).lower() for m in RE_FUNCTIONS.finditer(stmt)}
+        tbl_names  = set(read_tbl) | set(write_tbl)
+        has_udf    = bool(all_fns - _EXCLUDE - tbl_names)
+
+        results.append({
+            "query_index":    idx,
+            "query_type":     qt,
+            "query_text":     stmt[:2000],
+            "read_tables":    read_tbl,
+            "written_tables": write_tbl,
+            "join_count":     len(RE_JOIN_KW.findall(stmt)),
+            "subquery_count": len(RE_SUBQUERY.findall(stmt)),
+            "uses_window":    bool(RE_WINDOW.search(stmt)),
+            "uses_udf":       has_udf,
+        })
+    return results
 
 
 def parse_file(path: Path) -> dict:
@@ -176,6 +249,7 @@ def parse_file(path: Path) -> dict:
         "has_dyn_part":   bool(RE_DYN_PART.search(sql)),
         "cross_db_joins": cross_db,
         "syntax_errors":  errors,
+        "queries":        split_statements(sql),
     }
 
 
