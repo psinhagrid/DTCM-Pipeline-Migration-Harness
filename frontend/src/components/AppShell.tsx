@@ -11,6 +11,7 @@ import {
   ScrollText,
   Activity,
   Search,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +21,7 @@ const navMain = [
   { to: "/workbench",     label: "Workbench",   icon: Code2 },
   { to: "/validation",    label: "Validation",  icon: ShieldCheck },
   { to: "/deployments",   label: "Deployments", icon: Rocket },
+  { to: "/skills",        label: "Skills",      icon: BookOpen },
 ];
 
 const navFuture = [

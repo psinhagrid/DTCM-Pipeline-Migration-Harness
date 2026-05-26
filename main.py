@@ -9,7 +9,7 @@ load_dotenv(Path(__file__).parent / ".env")
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from routes import stream, graph
+from routes import stream, graph, skills as skills_router
 from event_queue import resolve_user_input, _pending_input
 from orchestrator import (
     run_pipeline,
@@ -31,6 +31,7 @@ app.add_middleware(
 
 app.include_router(stream.router)
 app.include_router(graph.router)
+app.include_router(skills_router.router)
 
 PIPELINES_ROOT = Path("pipelines")
 OUTPUT_ROOT    = Path("output")

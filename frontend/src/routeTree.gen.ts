@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WorkbenchRouteImport } from './routes/workbench'
 import { Route as ValidationRouteImport } from './routes/validation'
+import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as OrchestrationRouteImport } from './routes/orchestration'
 import { Route as GovernanceRouteImport } from './routes/governance'
 import { Route as DeploymentsRouteImport } from './routes/deployments'
@@ -26,6 +27,11 @@ const WorkbenchRoute = WorkbenchRouteImport.update({
 const ValidationRoute = ValidationRouteImport.update({
   id: '/validation',
   path: '/validation',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SkillsRoute = SkillsRouteImport.update({
+  id: '/skills',
+  path: '/skills',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OrchestrationRoute = OrchestrationRouteImport.update({
@@ -66,6 +72,7 @@ export interface FileRoutesByFullPath {
   '/deployments': typeof DeploymentsRoute
   '/governance': typeof GovernanceRoute
   '/orchestration': typeof OrchestrationRoute
+  '/skills': typeof SkillsRoute
   '/validation': typeof ValidationRoute
   '/workbench': typeof WorkbenchRoute
 }
@@ -76,6 +83,7 @@ export interface FileRoutesByTo {
   '/deployments': typeof DeploymentsRoute
   '/governance': typeof GovernanceRoute
   '/orchestration': typeof OrchestrationRoute
+  '/skills': typeof SkillsRoute
   '/validation': typeof ValidationRoute
   '/workbench': typeof WorkbenchRoute
 }
@@ -87,6 +95,7 @@ export interface FileRoutesById {
   '/deployments': typeof DeploymentsRoute
   '/governance': typeof GovernanceRoute
   '/orchestration': typeof OrchestrationRoute
+  '/skills': typeof SkillsRoute
   '/validation': typeof ValidationRoute
   '/workbench': typeof WorkbenchRoute
 }
@@ -99,6 +108,7 @@ export interface FileRouteTypes {
     | '/deployments'
     | '/governance'
     | '/orchestration'
+    | '/skills'
     | '/validation'
     | '/workbench'
   fileRoutesByTo: FileRoutesByTo
@@ -109,6 +119,7 @@ export interface FileRouteTypes {
     | '/deployments'
     | '/governance'
     | '/orchestration'
+    | '/skills'
     | '/validation'
     | '/workbench'
   id:
@@ -119,6 +130,7 @@ export interface FileRouteTypes {
     | '/deployments'
     | '/governance'
     | '/orchestration'
+    | '/skills'
     | '/validation'
     | '/workbench'
   fileRoutesById: FileRoutesById
@@ -130,6 +142,7 @@ export interface RootRouteChildren {
   DeploymentsRoute: typeof DeploymentsRoute
   GovernanceRoute: typeof GovernanceRoute
   OrchestrationRoute: typeof OrchestrationRoute
+  SkillsRoute: typeof SkillsRoute
   ValidationRoute: typeof ValidationRoute
   WorkbenchRoute: typeof WorkbenchRoute
 }
@@ -148,6 +161,13 @@ declare module '@tanstack/react-router' {
       path: '/validation'
       fullPath: '/validation'
       preLoaderRoute: typeof ValidationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/skills': {
+      id: '/skills'
+      path: '/skills'
+      fullPath: '/skills'
+      preLoaderRoute: typeof SkillsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/orchestration': {
@@ -202,6 +222,7 @@ const rootRouteChildren: RootRouteChildren = {
   DeploymentsRoute: DeploymentsRoute,
   GovernanceRoute: GovernanceRoute,
   OrchestrationRoute: OrchestrationRoute,
+  SkillsRoute: SkillsRoute,
   ValidationRoute: ValidationRoute,
   WorkbenchRoute: WorkbenchRoute,
 }
