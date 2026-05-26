@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell, Badge } from "@/components/AppShell";
 import { useEffect, useState, useRef, useCallback } from "react";
-import { Network, GitBranch, Database, Cpu, ChevronRight, AlertCircle, RefreshCw, ListOrdered } from "lucide-react";
+import { Network, GitBranch, Database, Cpu, ChevronRight, AlertCircle, RefreshCw, ListOrdered, Zap } from "lucide-react";
 
 export const Route = createFileRoute("/context-graph")({ component: ContextGraph });
 
@@ -96,12 +96,13 @@ function computeBlastRadius(pipelines: Pipeline[]): Map<string, number> {
 // ── Main component ────────────────────────────────────────────────────────────
 
 function ContextGraph() {
-  const [tab,      setTab]      = useState<"graph" | "plan">("graph");
-  const [data,     setData]     = useState<{ pipelines: Pipeline[]; error: string | null } | null>(null);
-  const [plan,     setPlan]     = useState<{ waves: Wave[]; total_pipelines: number; error: string | null } | null>(null);
-  const [selected, setSelected] = useState<Pipeline | null>(null);
-  const [loading,  setLoading]  = useState(true);
+  const [tab,         setTab]         = useState<"graph" | "plan">("graph");
+  const [data,        setData]        = useState<{ pipelines: Pipeline[]; error: string | null } | null>(null);
+  const [plan,        setPlan]        = useState<{ waves: Wave[]; total_pipelines: number; error: string | null } | null>(null);
+  const [selected,    setSelected]    = useState<Pipeline | null>(null);
+  const [loading,     setLoading]     = useState(true);
   const [planLoading, setPlanLoading] = useState(false);
+  const [building,    setBuilding]    = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
 
   const fetchGraph = useCallback(() => {
@@ -122,6 +123,14 @@ function ContextGraph() {
 
   useEffect(() => { fetchGraph(); }, [fetchGraph]);
   useEffect(() => { if (tab === "plan" && !plan) fetchPlan(); }, [tab]);
+
+  async function buildGraph() {
+    setBuilding(true);
+    await fetch("/build-graph", { method: "POST" }).catch(() => {});
+    setBuilding(false);
+    fetchGraph();
+    setPlan(null); // invalidate cached plan
+  }
 
   const pipelines = data?.pipelines ?? [];
   const tiers     = computeTiers(pipelines);
@@ -180,10 +189,28 @@ function ContextGraph() {
               {pipelines.length} pipeline{pipelines.length !== 1 ? "s" : ""}
             </Badge>
             <Badge tone="neutral">{edges.length} edges</Badge>
+
+            {/* Build graph — calls tools directly, no LLM */}
+            <button
+              onClick={buildGraph}
+              disabled={building || loading}
+              className={`inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-[13px] font-medium transition ${
+                building
+                  ? "border-info/40 bg-info/8 text-info cursor-not-allowed"
+                  : "border-border bg-white text-muted-foreground hover:text-foreground hover:bg-surface-2"
+              }`}
+              title="Scan all pipelines and write to Neo4j (no LLM)"
+            >
+              <Zap className={`h-3.5 w-3.5 ${building ? "animate-pulse" : ""}`} />
+              {building ? "Building…" : "Build Graph"}
+            </button>
+
+            {/* Refresh display */}
             <button
               onClick={() => { fetchGraph(); if (tab === "plan") fetchPlan(); }}
-              disabled={loading || planLoading}
-              className="inline-flex items-center gap-2 h-9 px-4 rounded-lg border border-border bg-white text-[13px] text-muted-foreground hover:text-foreground hover:bg-surface-2 transition"
+              disabled={loading || planLoading || building}
+              className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-border bg-white text-[13px] text-muted-foreground hover:text-foreground hover:bg-surface-2 transition"
+              title="Refresh from Neo4j"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${(loading || planLoading) ? "animate-spin" : ""}`} />
             </button>

@@ -27,6 +27,7 @@ export default defineConfig({
         "/output":     { target: "http://localhost:8001", changeOrigin: true },
         "/reset":      { target: "http://localhost:8001", changeOrigin: true },
         "/graph":           { target: "http://localhost:8001", changeOrigin: true },
+        "/build-graph":     { target: "http://localhost:8001", changeOrigin: true },
         "/skills-api":      { target: "http://localhost:8001", changeOrigin: true },
         "/user-input":      { target: "http://localhost:8001", changeOrigin: true },
         "/pending-input":   { target: "http://localhost:8001", changeOrigin: true },
