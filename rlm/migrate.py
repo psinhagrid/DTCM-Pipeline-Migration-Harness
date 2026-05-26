@@ -1,39 +1,16 @@
 """
 DTCM Migration Agent — RLM invocation.
-
-The RLM reads migration_flow skill first, then uses tools to orchestrate
-the full assess → convert → reconcile → deploy pipeline.
-
-Tools:
-  read_skill          load any skill from skills/
-  scan_repo           list HQL files in a pipeline
-  parse_hql           parse one HQL file (tables, UDFs, syntax)
-  lineage_extract     derive upstream/downstream table dependencies
-  classify_complexity score and classify migration complexity
-  neo4j_write         persist lineage graph to Neo4j
-  query_graph         query Neo4j (blast_radius, wave, summary)
-  transform_hql       convert HQL → PySpark via Claude Sonnet
-  generate_dag        generate MWAA Airflow DAG
-  validate_pyspark    static PySpark validation (syntax, imports, write ops)
-  analyze_file        8-dimension semantic comparison HQL vs PySpark
-  workflow_parity     check DAG structure matches conversion
-  runtime_validation  simulated runtime checks (row count, checksum, SLA)
-  compile_report      compile reconciliation report with confidence score
-  validate_artifacts  validate PySpark files and DAG structure
-  generate_cicd       generate CI/CD pipeline YAML
-  run_smoke_tests     run smoke test suite (4 real + 3 simulated)
-  compute_governance  compute readiness score and governance approval
-  write_manifests     write output JSON manifests to disk
 """
 
 import asyncio
+import json
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parents[1] / ".env")
 
-import anthropic  # noqa: F401 — ensures Anthropic client is importable
+import anthropic  # noqa: F401
 from fast_rlm import run, RLMConfig
 from event_queue import push
 
@@ -48,7 +25,6 @@ from .tools import (
     compute_governance, write_manifests,
 )
 
-# Deno required by fast-rlm
 _DENO = Path.home() / ".deno" / "bin"
 if str(_DENO) not in os.environ.get("PATH", ""):
     os.environ["PATH"] = str(_DENO) + ":" + os.environ.get("PATH", "")
@@ -80,6 +56,84 @@ ENV = {k: v for k, v in {
     "RLM_MODEL_API_KEY":  os.getenv("RLM_MODEL_API_KEY", ""),
 }.items() if v}
 
+LOG_DIR = Path(__file__).parents[1] / "logs"
+
+
+def _extract_plan(code: str) -> str:
+    """Extract meaningful lines from agent code — comments + first tool calls."""
+    if not code:
+        return ""
+    lines = code.splitlines()
+    plan_lines = []
+    tool_calls = 0
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#"):
+            text = stripped.lstrip("#").strip()
+            if len(text) > 3:
+                plan_lines.append(text)
+        elif "(" in stripped and not stripped.startswith("print") and tool_calls < 4:
+            # First few function calls show intent
+            call = stripped.split("(")[0].split("=")[-1].strip()
+            if call and not call.startswith("_") and len(call) > 2:
+                plan_lines.append(f"→ {call}(...)")
+                tool_calls += 1
+    return " · ".join(plan_lines[:4]) if plan_lines else ""
+
+
+async def _stream_reasoning(pipeline: str, stop_event: asyncio.Event, run_started_at: float) -> None:
+    """Watch the log file created for THIS run only."""
+    log_path = None
+    seen_bytes = 0
+    seen_steps: set = set()
+
+    while not stop_event.is_set():
+        if log_path is None:
+            # Only pick up log files created AFTER this run started
+            logs = sorted(LOG_DIR.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+            new_logs = [l for l in logs if l.stat().st_mtime >= run_started_at]
+            if new_logs:
+                log_path = new_logs[0]
+                seen_bytes = 0
+
+        if log_path and log_path.exists():
+            try:
+                with open(log_path, "r", encoding="utf-8") as f:
+                    f.seek(seen_bytes)
+                    new = f.read()
+                    seen_bytes = f.tell()
+
+                for line in new.splitlines():
+                    if not line.strip():
+                        continue
+                    try:
+                        entry = json.loads(line)
+                    except Exception:
+                        continue
+
+                    event_type = entry.get("event_type")
+                    step = entry.get("step")
+
+                    if event_type in ("execution_result", "code_generated") and step not in seen_steps and step is not None:
+                        seen_steps.add(step)
+                        code = entry.get("code", "")
+                        plan = _extract_plan(code)
+                        if plan and step > 0:
+                            await push(
+                                type="reasoning",
+                                agent=NAME,
+                                message=plan,
+                                step=step,
+                                pipeline=pipeline,
+                                code=code[:600] if code else "",
+                            )
+            except Exception:
+                pass
+
+        await asyncio.sleep(0.4)
+
 
 async def run_migration(pipeline_name: str) -> dict:
     async def _e(msg: str, etype: str = "status") -> None:
@@ -87,29 +141,58 @@ async def run_migration(pipeline_name: str) -> dict:
 
     await _e(f"RLM started — {pipeline_name}", "delegation")
 
-    result = await asyncio.to_thread(
-        run,
-        query         = {
-            "pipeline":    pipeline_name,
-            "instruction": (
-                "Work one tool at a time. Call one tool, observe the result, "
-                "reason about what it means, then decide what to call next. "
-                "Do not write multi-step scripts upfront. "
-                "Start: call list_skills(), then read_skill('migration_flow'). "
-                "migration_flow will tell you which skills to read for each phase — "
-                "read each of those skills by their exact name before using any tools. "
-                "Run the ASSESS phase only. Do not run CONVERT, RECONCILE, or DEPLOY."
-            ),
+    import time
+    run_started_at = time.time()
+    stop_event = asyncio.Event()
+    watcher = asyncio.create_task(_stream_reasoning(pipeline_name, stop_event, run_started_at))
+
+    output_schema = {
+        "type": "object",
+        "required": ["pipeline", "outcome", "summary", "assessment"],
+        "properties": {
+            "pipeline":   {"type": "string"},
+            "outcome":    {"type": "string", "enum": ["SUCCESS", "PARTIAL", "HALTED", "FAILED"]},
+            "summary":    {"type": "string"},
+            "assessment": {"type": "object"},
+            "conversion":     {"type": "object"},
+            "reconciliation": {"type": "object"},
+            "deployment":     {"type": "object"},
         },
-        tools         = TOOLS,
-        config        = CONFIG,
-        verbose       = True,
-        env_variables = ENV,
-    )
+    }
+
+    try:
+        result = await asyncio.to_thread(
+            run,
+            query={
+                "pipeline":    pipeline_name,
+                "instruction": (
+                    "Run the full migration pipeline: ASSESS → CONVERT → RECONCILE → DEPLOY. "
+                    "Start by calling list_skills() then read_skill('migration_flow'). "
+                    "migration_flow tells you the phase order and which skills to read for each phase — "
+                    "read each skill by its exact name before using any tools in that phase. "
+                    "After each phase reason about the results before proceeding to the next."
+                ),
+            },
+            tools=TOOLS,
+            config=CONFIG,
+            output_schema=output_schema,
+            verbose=True,
+            env_variables=ENV,
+        )
+    finally:
+        await asyncio.sleep(0.6)  # flush last log entries
+        stop_event.set()
+        watcher.cancel()
 
     output = result.get("results", {})
     if isinstance(output, str):
         output = {"outcome": "FAILED", "summary": output}
-    outcome = output.get("outcome", "UNKNOWN") if isinstance(output, dict) else "FAILED"
+    if not isinstance(output, dict):
+        output = {"outcome": "FAILED", "summary": str(output)}
+    # Infer outcome from assessment if agent forgot to set it
+    if not output.get("outcome"):
+        has_assessment = bool(output.get("assessment"))
+        output["outcome"] = "SUCCESS" if has_assessment else "FAILED"
+    outcome = output.get("outcome", "FAILED")
     await _e(f"Migration {outcome} — {output.get('summary', '')}", "complete")
     return output

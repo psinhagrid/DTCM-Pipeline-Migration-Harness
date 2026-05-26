@@ -61,7 +61,7 @@ Used by: **convert_subagent**
 
 Used by: **deploy_subagent**
 
-1. Call `query_graph_tool(pipeline, "upstream")` before governance approval
+1. Query the graph for upstream dependencies before governance approval
 2. For each upstream pipeline returned: check if it has been migrated
 3. If any upstream NOT yet migrated → add governance condition:
    *"Upstream pipeline X not yet migrated — verify table availability before prod promotion"*
@@ -84,13 +84,13 @@ Used by: **deploy_subagent**
 
 ### reconcile_subagent — borderline confidence decision
 
-Scenario: `fraud_risk_scoring` pipeline, `compile_report_tool` returns `confidence=0.72`.
+Scenario: `fraud_risk_scoring` pipeline, reconciliation report returns `confidence=0.72`.
 
 **Step 1 — Is confidence borderline?** Yes — 0.72 is between 0.50 and 0.85.
 
 **Step 2 — Query graph:**
 ```
-query_graph_tool("fraud_risk_scoring", "blast_radius")
+blast_radius query for "fraud_risk_scoring"
 → {"blast_radius": ["executive_reporting", "merchant_settlement", "ops_dashboard"]}
   count = 3
 ```
@@ -110,7 +110,7 @@ Scenario: deploying `executive_reporting`.
 
 **Step 1 — Query upstream:**
 ```
-query_graph_tool("executive_reporting", "upstream")
+upstream query for "executive_reporting"
 → {"upstream": ["daily_revenue_agg", "merchant_settlement", "fraud_risk_scoring", "user_activity_enrichment"]}
 ```
 
@@ -137,7 +137,7 @@ Set in governance result:
 
 ## Neo4j availability — what to do in each case
 
-| Situation | `query_graph_tool` returns | Action |
+| Situation | Graph query returns | Action |
 |---|---|---|
 | Neo4j running, graph built | Full data | Use for threshold decisions and upstream checks |
 | Neo4j running, graph empty (not built) | `[]` or `{}` | Proceed with standard thresholds. Note: "graph not yet built" |

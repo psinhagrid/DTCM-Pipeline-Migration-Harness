@@ -28,7 +28,7 @@ description: >
 - Count `(SELECT` occurrences as subquery depth.
 - Flag `PARTITION (...${hiveconf:...})` as dynamic partition usage.
 
-### Worked example — what parse_hql_tool returns
+### Worked example — what HQL parsing returns
 
 For a file containing this HQL:
 ```sql
@@ -40,7 +40,7 @@ WHERE t.status = 'SETTLED'
 GROUP BY t.merchant_id;
 ```
 
-parse_hql_tool returns:
+Parsing returns:
 ```
 read_tables:    {raw.transactions, dim.merchants}
 written_tables: {raw.revenue}
@@ -130,9 +130,9 @@ SQL: `JOIN compliance.blacklist_merchants bl ON t.merchant_id = bl.id`
 
 ### After lineage is extracted
 
-Pass to `neo4j_write_graph_tool`:
+Persist lineage to the graph database with:
 - `upstream_tables` ← lineage.upstream
 - `output_tables` ← lineage.output_tables
 - `downstream` ← lineage.downstream
-- `udfs` ← aggregated from all parse_hql_tool results
-- `complexity` + `estimated_effort` ← from classify_complexity_tool
+- `udfs` ← aggregated across all parsed files
+- `complexity` + `estimated_effort` ← from complexity classification

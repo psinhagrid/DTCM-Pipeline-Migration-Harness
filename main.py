@@ -83,6 +83,7 @@ class ToolCallLogger(BaseHTTPMiddleware):
                 type="tool_call",
                 agent="rlm_agent",
                 message=f"⚙ {tool_name}",
+                tool_name=tool_name,
                 pipeline="",
             ))
 
@@ -93,12 +94,16 @@ class ToolCallLogger(BaseHTTPMiddleware):
 
         if tool_name != "read-skill":
             try:
-                summary = _tool_result_summary(tool_name, json.loads(body))
+                parsed = json.loads(body)
+                summary = _tool_result_summary(tool_name, parsed)
                 if summary:
                     asyncio.create_task(push(
                         type="tool_result",
                         agent="rlm_agent",
                         message=f"  ↳ {summary}",
+                        tool_name=tool_name,
+                        summary=summary,
+                        ok="error" not in parsed,
                         pipeline="",
                     ))
             except Exception:

@@ -16,12 +16,11 @@ function stripFrontmatter(text: string): string {
 export const Route = createFileRoute("/skills")({ component: SkillsEditor });
 
 const AGENT_META: Record<string, { label: string; short: string; color: string }> = {
-  shared:      { label: "Shared",              short: "SH", color: "text-info bg-info/10 border-info/20" },
-  assess:      { label: "assess_subagent",     short: "AS", color: "text-warning bg-warning/10 border-warning/20" },
-  convert:     { label: "convert_subagent",    short: "CV", color: "text-agent-convert bg-agent-convert/10 border-agent-convert/20" },
-  reconcile:   { label: "reconcile_subagent",  short: "RC", color: "text-warning bg-warning/10 border-warning/20" },
-  deploy:      { label: "deploy_subagent",     short: "DP", color: "text-agent-validate bg-agent-validate/10 border-agent-validate/20" },
-  repair_code: { label: "repair_code",         short: "FX", color: "text-danger bg-danger/10 border-danger/20" },
+  shared:    { label: "Shared",    short: "SH", color: "text-info bg-info/10 border-info/20" },
+  assess:    { label: "Assess",    short: "AS", color: "text-sky-600 bg-sky-500/10 border-sky-500/20" },
+  convert:   { label: "Convert",   short: "CV", color: "text-violet-600 bg-violet-500/10 border-violet-500/20" },
+  reconcile: { label: "Reconcile", short: "RC", color: "text-amber-600 bg-amber-500/10 border-amber-500/20" },
+  deploy:    { label: "Deploy",    short: "DP", color: "text-emerald-600 bg-emerald-500/10 border-emerald-500/20" },
 };
 
 const totalCount = (index: Record<string, string[]>) =>

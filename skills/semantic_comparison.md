@@ -10,7 +10,7 @@ description: >
 
 ## Step 1 — PySpark static validation (before semantic comparison)
 
-Run `validate_pyspark_tool` on each `.py` file first. Check 8 things:
+Validate each generated PySpark file before semantic comparison. Check 8 things:
 
 1. **syntax** — `ast.parse()` passes — if FAILED, halt this file immediately
 2. **spark_import** — `from pyspark.sql import SparkSession` present

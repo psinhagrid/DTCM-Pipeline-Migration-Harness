@@ -106,7 +106,15 @@ def query_pipeline_summary(pipeline: str) -> dict:
                 collect(DISTINCT dep.name)      AS depends_on,
                 collect(DISTINCT consumer.name) AS consumed_by
         """, name=pipeline)
-        return rows[0] if rows else {}
+        if not rows:
+            return {}
+        row = dict(rows[0])
+        if row.get("last_assessed") is not None:
+            try:
+                row["last_assessed"] = row["last_assessed"].iso_format()
+            except Exception:
+                row["last_assessed"] = str(row["last_assessed"])
+        return row
     except Exception:
         return {}
 

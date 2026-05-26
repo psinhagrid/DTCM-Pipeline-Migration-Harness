@@ -64,18 +64,16 @@ def test_dag_import(dag_code: str) -> dict:
     }
 
 
-def test_artifact_completeness(conversion: dict) -> dict:
+def test_artifact_completeness(files: list, dag: str) -> dict:
     """Real: verify expected artifacts are present and non-empty."""
-    files   = conversion.get("files", [])
-    dag     = conversion.get("dag", "")
     missing = []
 
     if not files:
         missing.append("No PySpark files found")
     for f in files:
         if not f.get("spark_python", "").strip():
-            missing.append(f"{f.get('filename')} is empty")
-    if not dag.strip():
+            missing.append(f"{f.get('filename', f.get('python_filename', '?'))} is empty")
+    if not (dag or "").strip():
         missing.append("DAG file is empty")
 
     return {
@@ -158,15 +156,17 @@ def test_sla_timing(pipeline: str, complexity: str) -> dict:
 
 def run_all_smoke_tests(pipeline: str, conversion: dict, reconcile: dict) -> dict:
     """Run full smoke test suite. Returns structured results."""
-    files      = conversion.get("files", [])
-    dag        = conversion.get("dag", "")
+    files = conversion.get("converted_files") or conversion.get("files") or []
+    dag   = conversion.get("dag_content") or conversion.get("dag") or ""
+    if isinstance(dag, dict):
+        dag = dag.get("dag_content") or dag.get("content") or ""
     complexity = reconcile.get("checks", {})
     assess_cx  = "MEDIUM"  # fallback
 
     tests = [
         test_python_syntax(files),
         test_dag_import(dag),
-        test_artifact_completeness(conversion),
+        test_artifact_completeness(files, dag),
         test_reconciliation_threshold(reconcile),
         test_spark_dry_run(pipeline, assess_cx, reconcile.get("confidence_score", 0.0)),
         test_data_sampling(pipeline, reconcile),

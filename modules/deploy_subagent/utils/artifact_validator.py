@@ -87,9 +87,11 @@ def validate_artifacts(conversion: dict, reconcile: dict) -> dict:
     Run all real artifact checks.
     Returns per-file results + DAG + reconciliation readiness.
     """
-    files       = conversion.get("files", [])
-    dag_content = conversion.get("dag", "")
-    results     = {}
+    files = conversion.get("converted_files") or conversion.get("files") or []
+    dag_content = conversion.get("dag_content") or conversion.get("dag") or ""
+    if isinstance(dag_content, dict):
+        dag_content = dag_content.get("dag_content") or dag_content.get("content") or ""
+    results = {}
 
     # Per-file Python syntax
     for f in files:

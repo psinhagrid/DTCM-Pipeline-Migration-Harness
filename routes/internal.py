@@ -523,7 +523,6 @@ _SKILL_SEARCH_PATHS: list[Path] = [
     _ROOT / "modules" / "convert_subagent"   / "skills",
     _ROOT / "modules" / "reconcile_subagent" / "skills",
     _ROOT / "modules" / "deploy_subagent"    / "skills",
-    _ROOT / "modules" / "repair_code"        / "skills",
 ]
 
 

@@ -154,9 +154,8 @@ s3://dtcm-artifacts/wave1/{pipeline}/
 
 ### Order of operations
 
-1. Convert all HQL files → PySpark (`transform_hql_tool` per file)
-2. Generate DAG (`generate_dag_tool`)
-3. Upload artifacts (`s3_upload_tool` — currently stubbed)
-4. Call `finish_conversion_tool`
+1. Convert each HQL file to PySpark
+2. Generate the Airflow DAG for the pipeline
+3. Upload artifacts to S3 (currently stubbed — note locally only if unavailable)
 
 If `s3_upload_tool` returns an error: include in result but do NOT halt. Note artifacts are local only.
