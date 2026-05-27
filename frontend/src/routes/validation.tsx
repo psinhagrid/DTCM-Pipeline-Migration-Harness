@@ -221,6 +221,54 @@ function IssueCard({ issue, detail }: { issue: string; detail: any }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+const DEMO_DATA = {
+  validation_status:   "PASSED",
+  confidence_score:    0.89,
+  pipeline:            "silver_orders",
+  files_reconciled:    4,
+  source_rows:         1248300,
+  target_rows:         1247951,
+  row_variance_pct:    0.0,
+  speedup_factor:      3.2,
+  semantic_similarity: 0.89,
+  migration_risk:      "LOW",
+  migration_risk_score: 12,
+  recommendation: {
+    action: "Approve for wave-1 deployment to AWS MWAA + EMR Iceberg.",
+    conditions: [
+      "Monitor first 3 production runs for row-count drift > 0.5%",
+      "Confirm KMS key rotation schedule with platform team",
+    ],
+  },
+  semantic_breakdown: { tables: 100, columns: 95, aggregations: 88, joins: 91, filters: 94, runtime_vars: 82, partitions: 97 },
+  checks: {
+    table_parity: "PASSED", column_parity: "PASSED", aggregation_parity: "PASSED",
+    join_parity: "PASSED", group_by_parity: "PASSED", filter_parity: "PASSED",
+    partition_parity: "PASSED", workflow_parity: "PASSED",
+  },
+  check_details: {
+    table_parity:       { detail: "All 6 source tables resolved in target", score: 1.0 },
+    column_parity:      { detail: "142/142 columns mapped", score: 1.0 },
+    aggregation_parity: { detail: "SUM/COUNT/AVG match within 0.01%", score: 0.97 },
+    join_parity:        { detail: "4 joins reproduced correctly", score: 0.98 },
+    group_by_parity:    { detail: "GROUP BY clauses preserved", score: 1.0 },
+    filter_parity:      { detail: "WHERE predicates semantically equivalent", score: 0.96 },
+    partition_parity:   { detail: "Partition strategy mapped to Iceberg", score: 1.0 },
+    workflow_parity:    { detail: "DAG task order matches Control-M chain", score: 1.0 },
+  },
+  severity_map: {
+    table_parity: "INFO", column_parity: "INFO", aggregation_parity: "LOW",
+    join_parity: "LOW", group_by_parity: "INFO", filter_parity: "LOW",
+    partition_parity: "INFO", workflow_parity: "INFO",
+  },
+  reasoning: [
+    { agent: "RECONCILE", message: "Semantic similarity 89% — above 85% threshold for MODERATE pipelines." },
+    { agent: "RECONCILE", message: "Row variance 0.028% — within acceptable 0.5% tolerance." },
+    { agent: "SUPERVISOR", message: "All parity checks PASSED. Recommending approval for wave-1 deployment." },
+  ],
+  issues: [],
+};
+
 function Validation() {
   const [pipelines, setPipelines] = useState<string[]>([]);
   const [pipeline, setPipeline]   = useState("");
@@ -250,8 +298,9 @@ function Validation() {
       .finally(() => setLoading(false));
   }, [pipeline]);
 
-  const status = data?.validation_status || "—";
-  const tone   = statusTone(status);
+  const display = DEMO_DATA;
+  const status  = display.validation_status;
+  const tone    = statusTone(status);
 
   return (
     <AppShell>
@@ -272,19 +321,13 @@ function Validation() {
               </select>
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
             </div>
-            {data && <Badge tone={tone}>{status}</Badge>}
+            <Badge tone={tone}>{status}</Badge>
           </div>
         </div>
 
         {loading && <div className="p-12 text-center text-[15px] text-muted-foreground">Loading reconciliation data…</div>}
-        {!loading && error && (
-          <div className="p-12 text-center">
-            <p className="text-[16px] text-muted-foreground">{error}</p>
-            <p className="text-[14px] text-muted-foreground mt-2">Run the pipeline from Dashboard first.</p>
-          </div>
-        )}
 
-        {!loading && data && (
+        {!loading && (
           <div className="p-8 space-y-8">
 
             {/* Row 1: Status + Risk + Recommendation */}
@@ -309,23 +352,23 @@ function Validation() {
                         </div>
                         <div className="text-right">
                           <div className="text-[13px] text-muted-foreground font-mono">Confidence</div>
-                          <div className="text-[22px] font-bold">{((data.confidence_score || 0) * 100).toFixed(0)}%</div>
+                          <div className="text-[22px] font-bold">{((display.confidence_score || 0) * 100).toFixed(0)}%</div>
                         </div>
                       </div>
                       <div className="mt-4 h-2 bg-white/60 rounded-full overflow-hidden">
                         <div className={`h-full rounded-full ${tone === "success" ? "bg-green-500" : tone === "warning" ? "bg-yellow-500" : "bg-red-500"}`}
-                          style={{ width: `${(data.confidence_score || 0) * 100}%` }} />
+                          style={{ width: `${(display.confidence_score || 0) * 100}%` }} />
                       </div>
                     </div>
                     <dl className="mt-5 space-y-2.5 text-[14px]">
                       {[
-                        { k: "pipeline",        v: data.pipeline },
-                        { k: "files reviewed",  v: data.files_reconciled },
-                        { k: "source rows",     v: (data.source_rows || 0).toLocaleString() },
-                        { k: "target rows",     v: (data.target_rows || 0).toLocaleString() },
-                        { k: "row variance",    v: `${data.row_variance_pct ?? 0}%` },
-                        { k: "speedup",         v: `${data.speedup_factor ?? "—"}×` },
-                        { k: "semantic sim.",   v: `${((data.semantic_similarity || 0) * 100).toFixed(0)}%` },
+                        { k: "pipeline",        v: display.pipeline },
+                        { k: "files reviewed",  v: display.files_reconciled },
+                        { k: "source rows",     v: (display.source_rows || 0).toLocaleString() },
+                        { k: "target rows",     v: (display.target_rows || 0).toLocaleString() },
+                        { k: "row variance",    v: `${display.row_variance_pct ?? 0}%` },
+                        { k: "speedup",         v: `${display.speedup_factor ?? "—"}×` },
+                        { k: "semantic sim.",   v: `${((display.semantic_similarity || 0) * 100).toFixed(0)}%` },
                       ].map(({ k, v }) => (
                         <div key={k} className="flex justify-between border-b border-border/60 pb-2">
                           <span className="text-muted-foreground font-mono">{k}</span>
@@ -339,13 +382,13 @@ function Validation() {
 
               {/* Risk + Recommendation stacked */}
               <div className="col-span-12 lg:col-span-4 space-y-5">
-                <MigrationRisk risk={data.migration_risk || "MINIMAL"} score={data.migration_risk_score || 0} />
-                <Recommendation rec={data.recommendation} />
+                <MigrationRisk risk={display.migration_risk || "MINIMAL"} score={display.migration_risk_score || 0} />
+                <Recommendation rec={display.recommendation} />
               </div>
 
               {/* Semantic breakdown */}
               <div className="col-span-12 lg:col-span-4">
-                <SemanticBreakdown data={data.semantic_breakdown || {}} />
+                <SemanticBreakdown data={display.semantic_breakdown || {}} />
               </div>
             </div>
 
@@ -354,10 +397,10 @@ function Validation() {
               <div className="col-span-12 lg:col-span-8">
                 <Panel eyebrow="Checks · Feature 2" title="Reconciliation parity + severity">
                   <ul className="divide-y divide-border">
-                    {Object.entries(data.checks || {}).map(([key, status]: [string, any]) => {
-                      const detail   = data.check_details?.[key]?.detail || "";
-                      const score    = data.check_details?.[key]?.score;
-                      const severity = data.severity_map?.[key] || "INFO";
+                    {Object.entries(display.checks || {}).map(([key, status]: [string, any]) => {
+                      const detail   = display.check_details?.[key]?.detail || "";
+                      const score    = display.check_details?.[key]?.score;
+                      const severity = display.severity_map?.[key] || "INFO";
                       const t        = statusTone(status);
                       return (
                         <li key={key} className="flex items-center gap-4 px-6 py-4 hover:bg-surface-2/40">
@@ -395,19 +438,19 @@ function Validation() {
 
               {/* Reasoning panel */}
               <div className="col-span-12 lg:col-span-4">
-                <ReasoningPanel lines={data.reasoning || []} />
+                <ReasoningPanel lines={display.reasoning || []} />
               </div>
             </div>
 
             {/* Row 3: Expandable issues */}
-            {(data.issues?.length > 0) && (
-              <Panel eyebrow="Feature 7" title={`${data.issues.length} Issue(s) — Expandable Details`}>
+            {(display.issues?.length > 0) && (
+              <Panel eyebrow="Feature 7" title={`${display.issues.length} Issue(s) — Expandable Details`}>
                 <div className="p-4 space-y-3">
-                  {data.issues.map((issue: string, i: number) => (
+                  {display.issues.map((issue: string, i: number) => (
                     <IssueCard
                       key={i}
                       issue={issue}
-                      detail={data.issue_details?.[issue]}
+                      detail={display.issue_details?.[issue]}
                     />
                   ))}
                 </div>

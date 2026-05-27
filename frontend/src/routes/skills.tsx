@@ -24,6 +24,17 @@ const AGENT_META: Record<string, { label: string; short: string; color: string }
   deploy:    { label: "Deploy",         short: "DP", color: "text-emerald-600 bg-emerald-500/10 border-emerald-500/20" },
 };
 
+const SKILL_DISPLAY_NAMES: Record<string, string> = {
+  graph_context:          "discovery_graph_ingestion",
+  risk_assessment:        "risk_tiering",
+  hiveql_to_pyspark:      "spark_emr_iceberg",
+  hiveql_repair:          "hive_to_athena_trino",
+  dag_generation:         "controlm_to_mwaa",
+  deployment_governance:  "sds_kms_security",
+  semantic_comparison:    "reconciliation",
+  artifact_validation:    "handover_package",
+};
+
 const totalCount = (index: Record<string, string[]>) =>
   Object.values(index).reduce((s, a) => s + a.length, 0);
 
@@ -115,7 +126,7 @@ function SkillsEditor() {
                   {/* Skill files */}
                   {files.map((f) => {
                     const isActive = selected?.agent === agent && selected?.filename === f;
-                    const name = f.replace(".md", "");
+                    const name = SKILL_DISPLAY_NAMES[f.replace(".md", "")] ?? f.replace(".md", "");
                     return (
                       <button key={f} onClick={() => select(agent, f)}
                         className={`w-full text-left flex items-center gap-2 pl-7 pr-3 py-1.5 text-[12px] font-mono transition-colors ${
