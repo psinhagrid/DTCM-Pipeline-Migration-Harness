@@ -162,7 +162,7 @@ function CodeBlock({ ev, index }: { ev: AgentEvent; index: number }) {
           <Brain className="h-3.5 w-3.5 text-purple-600" />
         </div>
         <div className="flex-1 min-w-0 flex items-center gap-3">
-          <span className="text-[13px] font-semibold text-foreground/80">Step {ev.step ?? index + 1} · Generated Code</span>
+          <span className="text-[13px] font-semibold text-foreground/80">Step {index + 1} · Generated Code</span>
           <span className="text-[10px] font-mono text-muted-foreground/40 tabular-nums">{lines.length} lines</span>
         </div>
         <span className="text-[10px] font-mono text-muted-foreground/40 tabular-nums shrink-0">{formatTs(ev.timestamp)}</span>
@@ -219,7 +219,11 @@ function ObservabilityPage() {
   const refresh = useCallback(() => setEvents([...eventsStore.events]), []);
 
   const stack     = useMemo(() => buildToolStack(events), [events]);
-  const codeSteps = useMemo(() => events.filter(e => e.type === "reasoning" && e.code), [events]);
+  const codeSteps = useMemo(() => {
+    const steps = events.filter(e => e.type === "reasoning" && e.code && (e.code ?? "").split("\n").length > 2);
+    steps.sort((a, b) => (a.step ?? 0) - (b.step ?? 0));
+    return steps;
+  }, [events]);
 
   const totalTools  = Object.values(stack).reduce((n, arr) => n + arr.length, 0);
   const successRate = totalTools === 0 ? "—" : Math.round(
