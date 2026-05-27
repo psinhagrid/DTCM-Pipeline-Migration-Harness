@@ -116,30 +116,25 @@ function FullGraphVisual({ graph }: { graph: FullGraph }) {
   const [hovered,  setHovered]  = useState<string|null>(null);
   const [selected, setSelected] = useState<FullGraphNode|null>(null);
 
-  const NW=130, NH=34, GAP_X=12, GAP_Y=52, ROW_GAP=18, PAD=40, MAX_PER_ROW=10;
+  const R=22, SPACING=54, ROW_H=88, PAD=48;
 
   const rows: Partial<Record<string, FullGraphNode[]>> = {};
   for (const t of TYPE_ORDER) rows[t] = graph.nodes.filter(n => n.type === t);
 
-  const svgW = Math.max(1300, MAX_PER_ROW*(NW+GAP_X)-GAP_X + PAD*2);
+  const maxCount = Math.max(...TYPE_ORDER.map(t => rows[t]?.length ?? 0));
+  const svgW = Math.max(1000, maxCount*SPACING + PAD*2);
 
   const pos = new Map<string,{x:number;y:number}>();
-  // Row label positions for each type group
   const typeRowY = new Map<string,number>();
-  let y = PAD;
+  let y = PAD + R;
   for (const t of TYPE_ORDER) {
     const group = rows[t] ?? [];
     if (!group.length) continue;
     typeRowY.set(t, y);
-    // Split into chunks of MAX_PER_ROW
-    for (let ci=0; ci<group.length; ci+=MAX_PER_ROW) {
-      const chunk = group.slice(ci, ci+MAX_PER_ROW);
-      const rowW = chunk.length*NW + (chunk.length-1)*GAP_X;
-      const startX = (svgW - rowW) / 2;
-      chunk.forEach((n,i) => pos.set(n.id, {x: startX + i*(NW+GAP_X) + NW/2, y: y + NH/2}));
-      y += NH + ROW_GAP;
-    }
-    y += GAP_Y - ROW_GAP;
+    const rowW = group.length*SPACING - (SPACING - R*2);
+    const startX = (svgW - rowW) / 2 + R;
+    group.forEach((n,i) => pos.set(n.id, {x: startX + i*SPACING, y}));
+    y += ROW_H;
   }
   const svgH = y + PAD;
 
@@ -183,7 +178,7 @@ function FullGraphVisual({ graph }: { graph: FullGraph }) {
             {TYPE_ORDER.map(t => {
               if (!(rows[t]?.length)) return null;
               const ry = typeRowY.get(t)!;
-              return <text key={t} x={8} y={ry+NH/2+4} fontSize={9} fontFamily="monospace"
+              return <text key={t} x={8} y={ry+4} fontSize={8} fontFamily="monospace"
                 fill="oklch(0.50 0.04 260)" fontWeight="700"
                 style={{textTransform:"uppercase",letterSpacing:"0.1em"}}>{t}</text>;
             })}
@@ -209,22 +204,29 @@ function FullGraphVisual({ graph }: { graph: FullGraph }) {
               const isDim = !!hovered && !connectedIds.has(n.id);
               const qProps = n.properties as any;
               const rawLabel = n.type === "Query" && qProps.query_id
-                ? String(qProps.query_id).split(".").slice(1,-1).join(".") || String(qProps.query_id).split(".").pop()!
+                ? String(qProps.query_id).split(".").slice(1,-1).join(".") || n.label
                 : n.label;
-              const label = rawLabel.length > 17 ? rawLabel.slice(0,16)+"…" : rawLabel;
+              const shortLabel = rawLabel.length > 9 ? rawLabel.slice(0,8)+"…" : rawLabel;
               return (
                 <g key={n.id}
-                  transform={`translate(${p.x-NW/2},${p.y-NH/2})`}
-                  style={{cursor:"pointer", opacity: isDim ? 0.2 : 1}}
+                  transform={`translate(${p.x},${p.y})`}
+                  style={{cursor:"pointer", opacity: isDim ? 0.15 : 1}}
                   onMouseEnter={() => setHovered(n.id)}
                   onMouseLeave={() => setHovered(null)}
                   onClick={() => setSelected(isSel ? null : n)}>
-                  <rect width={NW} height={NH} rx={5}
-                    fill={col.fill} stroke={isSel ? col.text : col.stroke}
-                    strokeWidth={isSel ? 2 : isHov ? 1.5 : 0.8}/>
-                  <text x={NW/2} y={NH/2+4} textAnchor="middle" fontSize={9}
+                  <circle r={R}
+                    fill={col.fill}
+                    stroke={isSel ? col.text : isHov ? col.stroke : col.stroke}
+                    strokeWidth={isSel ? 2.5 : isHov ? 2 : 0.8}/>
+                  <text textAnchor="middle" y={4} fontSize={7}
                     fontFamily="monospace" fill={col.text}
-                    fontWeight={isSel||isHov ? "700":"500"}>{label}</text>
+                    fontWeight={isSel||isHov ? "700":"500"}>{shortLabel}</text>
+                  {(isHov || isSel) && (
+                    <text textAnchor="middle" y={R+10} fontSize={8}
+                      fontFamily="monospace" fill={col.text} fontWeight="600">
+                      {rawLabel.length > 20 ? rawLabel.slice(0,19)+"…" : rawLabel}
+                    </text>
+                  )}
                 </g>
               );
             })}
