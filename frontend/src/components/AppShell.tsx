@@ -3,7 +3,6 @@ import { ReactNode } from "react";
 import {
   LayoutDashboard,
   Terminal,
-  Code2,
   ShieldCheck,
   Network,
   Gavel,
@@ -19,7 +18,6 @@ const navMain = [
   { to: "/",               label: "Executive",     icon: LayoutDashboard },
   { to: "/orchestration",  label: "Logs",          icon: Terminal },
   { to: "/observability",  label: "Observability", icon: Activity },
-  { to: "/workbench",     label: "Workbench",   icon: Code2 },
   { to: "/validation",    label: "Validation",  icon: ShieldCheck },
   { to: "/deployments",   label: "Deployments", icon: Rocket },
   { to: "/skills",        label: "Skills",      icon: BookOpen },

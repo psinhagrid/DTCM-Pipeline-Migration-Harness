@@ -16,11 +16,12 @@ function stripFrontmatter(text: string): string {
 export const Route = createFileRoute("/skills")({ component: SkillsEditor });
 
 const AGENT_META: Record<string, { label: string; short: string; color: string }> = {
-  shared:    { label: "Shared",    short: "SH", color: "text-info bg-info/10 border-info/20" },
-  assess:    { label: "Assess",    short: "AS", color: "text-sky-600 bg-sky-500/10 border-sky-500/20" },
-  convert:   { label: "Convert",   short: "CV", color: "text-violet-600 bg-violet-500/10 border-violet-500/20" },
-  reconcile: { label: "Reconcile", short: "RC", color: "text-amber-600 bg-amber-500/10 border-amber-500/20" },
-  deploy:    { label: "Deploy",    short: "DP", color: "text-emerald-600 bg-emerald-500/10 border-emerald-500/20" },
+  skills:    { label: "Knowledge Base", short: "KB", color: "text-primary bg-primary/10 border-primary/20" },
+  shared:    { label: "Shared",         short: "SH", color: "text-info bg-info/10 border-info/20" },
+  assess:    { label: "Assess",         short: "AS", color: "text-sky-600 bg-sky-500/10 border-sky-500/20" },
+  convert:   { label: "Convert",        short: "CV", color: "text-violet-600 bg-violet-500/10 border-violet-500/20" },
+  reconcile: { label: "Reconcile",      short: "RC", color: "text-amber-600 bg-amber-500/10 border-amber-500/20" },
+  deploy:    { label: "Deploy",         short: "DP", color: "text-emerald-600 bg-emerald-500/10 border-emerald-500/20" },
 };
 
 const totalCount = (index: Record<string, string[]>) =>
