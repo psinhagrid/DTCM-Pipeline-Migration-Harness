@@ -116,27 +116,25 @@ function FullGraphVisual({ graph }: { graph: FullGraph }) {
   const [hovered,  setHovered]  = useState<string|null>(null);
   const [selected, setSelected] = useState<FullGraphNode|null>(null);
 
-  const R=22, SPACING=54, ROW_H=88, PAD=48;
+  const R=22, PAD=60;
+  const svgW=1300, svgH=720;
 
-  const rows: Partial<Record<string, FullGraphNode[]>> = {};
-  for (const t of TYPE_ORDER) rows[t] = graph.nodes.filter(n => n.type === t);
-
-  const maxCount = Math.max(...TYPE_ORDER.map(t => rows[t]?.length ?? 0));
-  const svgW = Math.max(1000, maxCount*SPACING + PAD*2);
-
+  // Seeded scatter — consistent positions, not rigid rows
   const pos = new Map<string,{x:number;y:number}>();
-  const typeRowY = new Map<string,number>();
-  let y = PAD + R;
-  for (const t of TYPE_ORDER) {
-    const group = rows[t] ?? [];
-    if (!group.length) continue;
-    typeRowY.set(t, y);
-    const rowW = group.length*SPACING - (SPACING - R*2);
-    const startX = (svgW - rowW) / 2 + R;
-    group.forEach((n,i) => pos.set(n.id, {x: startX + i*SPACING, y}));
-    y += ROW_H;
+  const placed: {x:number;y:number}[] = [];
+  let seed = 42;
+  const rand = () => { seed = (seed*1664525 + 1013904223) & 0xffffffff; return (seed >>> 0) / 0xffffffff; };
+
+  for (const n of graph.nodes) {
+    let x=0, y=0, tries=0;
+    do {
+      x = PAD + rand() * (svgW - PAD*2);
+      y = PAD + rand() * (svgH - PAD*2);
+      tries++;
+    } while (tries < 80 && placed.some(p => Math.hypot(p.x-x, p.y-y) < R*2.8));
+    pos.set(n.id, {x, y});
+    placed.push({x, y});
   }
-  const svgH = y + PAD;
 
   const connectedIds = new Set<string>();
   if (hovered) {
@@ -150,21 +148,22 @@ function FullGraphVisual({ graph }: { graph: FullGraph }) {
   return (
     <div className="flex gap-4 items-start h-full overflow-hidden">
       <div className="flex-1 flex flex-col overflow-hidden rounded-xl border border-border bg-white shadow-sm">
-        <div className="flex items-center gap-4 px-5 py-2.5 border-b border-border flex-wrap shrink-0">
-          {TYPE_ORDER.map(t => {
-            const count = rows[t]?.length ?? 0;
-            if (!count) return null;
-            const col = TYPE_COLORS[t];
-            return (
-              <span key={t} className="inline-flex items-center gap-1.5 text-[11px] font-mono">
-                <span className="h-3 w-3 rounded-sm border inline-block" style={{background:col.fill,borderColor:col.stroke}}/>
-                <span style={{color:col.text}} className="font-semibold">{count} {t}{count>1?"s":""}</span>
-              </span>
-            );
-          })}
-          <span className="ml-auto text-[11px] font-mono text-muted-foreground/60">
-            {graph.nodes.length} nodes · {graph.edges.length} edges · hover to highlight
-          </span>
+        <div className="flex items-center gap-3 px-5 py-2.5 border-b border-border shrink-0">
+          <span className="text-[11px] font-mono text-muted-foreground/60 shrink-0">{graph.nodes.length} nodes · {graph.edges.length} edges</span>
+          <span className="text-[10px] font-mono text-muted-foreground/40 shrink-0">hover to highlight · click for details</span>
+          <div className="ml-auto flex items-center gap-3 flex-wrap justify-end">
+            {TYPE_ORDER.map(t => {
+              const count = graph.nodes.filter(n => n.type===t).length;
+              if (!count) return null;
+              const col = TYPE_COLORS[t];
+              return (
+                <span key={t} className="inline-flex items-center gap-1.5 text-[11px] font-mono">
+                  <svg width="14" height="14"><circle cx="7" cy="7" r="6" fill={col.fill} stroke={col.stroke} strokeWidth="1.5"/></svg>
+                  <span style={{color:col.text}} className="font-medium">{t} <span className="opacity-50">({count})</span></span>
+                </span>
+              );
+            })}
+          </div>
         </div>
 
         <div className="flex-1 overflow-auto">
@@ -175,13 +174,7 @@ function FullGraphVisual({ graph }: { graph: FullGraph }) {
               </marker>
             </defs>
 
-            {TYPE_ORDER.map(t => {
-              if (!(rows[t]?.length)) return null;
-              const ry = typeRowY.get(t)!;
-              return <text key={t} x={8} y={ry+4} fontSize={8} fontFamily="monospace"
-                fill="oklch(0.50 0.04 260)" fontWeight="700"
-                style={{textTransform:"uppercase",letterSpacing:"0.1em"}}>{t}</text>;
-            })}
+
 
             {graph.edges.map((e,i) => {
               const from = pos.get(e.source); const to = pos.get(e.target);
