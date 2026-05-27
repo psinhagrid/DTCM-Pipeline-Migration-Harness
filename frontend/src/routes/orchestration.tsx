@@ -9,27 +9,11 @@ import {
 } from "lucide-react";
 import { onReset } from "@/lib/reset-store";
 import { marked } from "marked";
+import eventsStore, { type AgentEvent } from "@/lib/events-store";
 
 marked.setOptions({ breaks: true, gfm: true });
 
 export const Route = createFileRoute("/orchestration")({ component: OrchestrationConsole });
-
-let _persistedEvents: AgentEvent[] = [];
-
-interface AgentEvent {
-  type: string;
-  agent: string;
-  message: string;
-  pipeline?: string;
-  timestamp?: string;
-  target?: string;
-  tool_name?: string;
-  summary?: string;
-  ok?: boolean;
-  step?: number;
-  code?: string;
-  done?: boolean;
-}
 
 // ── Phase detection ───────────────────────────────────────────────────────────
 const PHASE_TOOLS: Record<string, string[]> = {
@@ -182,182 +166,9 @@ function DelegationDivider({ ev }: { ev: AgentEvent }) {
   );
 }
 
-interface ToolEntry { callEv: AgentEvent; resultEv?: AgentEvent; phase: Phase | null; }
-
-function buildToolStack(events: AgentEvent[]): Record<string, ToolEntry[]> {
-  const byPhase: Record<string, ToolEntry[]> = { ASSESS: [], CONVERT: [], RECONCILE: [], DEPLOY: [], OTHER: [] };
-  const pendingCalls: Record<string, AgentEvent> = {};
-
-  for (const ev of events) {
-    if (ev.type === "tool_call") {
-      const tool = ev.tool_name ?? ev.message.replace("⚙ ", "");
-      pendingCalls[tool] = ev;
-    } else if (ev.type === "tool_result") {
-      const tool   = ev.tool_name ?? "";
-      const callEv = pendingCalls[tool];
-      const phase  = detectPhase(tool);
-      const bucket = phase ?? "OTHER";
-      const entry: ToolEntry = { callEv: callEv ?? ev, resultEv: ev, phase };
-      if (callEv) delete pendingCalls[tool];
-      if (bucket in byPhase) byPhase[bucket].push(entry);
-    }
-  }
-  for (const [tool, callEv] of Object.entries(pendingCalls)) {
-    const phase  = detectPhase(tool);
-    const bucket = phase ?? "OTHER";
-    if (bucket in byPhase) byPhase[bucket].push({ callEv, phase });
-  }
-  return byPhase;
-}
-
-function CodeStepBlock({ ev }: { ev: AgentEvent }) {
-  const [open, setOpen] = useState(false);
-  const lines = (ev.code ?? "").split("\n");
-  return (
-    <div className="mx-2 mb-1.5 rounded border border-white/10 overflow-hidden">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-white/5 transition-colors group"
-      >
-        <Brain className="h-3 w-3 text-purple-400/80 shrink-0" />
-        <span className="text-[10px] font-mono text-purple-400/80 uppercase shrink-0">step {ev.step ?? "?"}</span>
-        <span className="text-[11px] text-white/80 flex-1 truncate">{ev.message}</span>
-        <span className="text-[9px] font-mono text-white/40 shrink-0 tabular-nums">{lines.length}L</span>
-        {open
-          ? <ChevronDown  className="h-2.5 w-2.5 text-white/40 group-hover:text-white/60 transition-colors shrink-0"/>
-          : <ChevronRight className="h-2.5 w-2.5 text-white/40 group-hover:text-white/60 transition-colors shrink-0"/>}
-      </button>
-      {open && ev.code && (
-        <div className="border-t border-white/10 overflow-auto max-h-[420px]" style={{background:"oklch(0.14 0.02 270)"}}>
-          <pre className="p-2 text-[12px] leading-[1.6] font-mono">
-            {lines.map((line, li) => (
-              <div key={li} className="flex gap-2 hover:bg-white/[0.05] rounded px-1">
-                <span className="text-white/30 select-none w-6 text-right shrink-0 text-[11px] pt-px tabular-nums">{li + 1}</span>
-                <span className="flex-1 whitespace-pre">
-                  {tokenizeLine(line, "python").map((tok, j) => (
-                    <span key={j} className={TOKEN_COLORS[tok.kind] ?? "text-slate-200"}>{tok.text}</span>
-                  ))}
-                </span>
-              </div>
-            ))}
-          </pre>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ToolStackPanel({ events }: { events: AgentEvent[] }) {
-  const stack     = useMemo(() => buildToolStack(events), [events]);
-  const codeSteps = useMemo(() => events.filter(e => e.type === "reasoning" && e.code), [events]);
-  const [tab, setTab]       = useState<"tools" | "gencode">("tools");
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const toggle    = (p: string) => setCollapsed(c => ({ ...c, [p]: !c[p] }));
-  const totalTools = Object.values(stack).reduce((n, arr) => n + arr.length, 0);
-  const phases     = [...PHASE_ORDER, "OTHER"] as (Phase | "OTHER")[];
-
-  return (
-    <div className="flex flex-col h-full" style={{background:"oklch(0.11 0.015 260)"}}>
-      <div className="px-3 py-2 border-b border-white/15 shrink-0 flex items-center gap-1">
-        <button
-          onClick={() => setTab("tools")}
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-mono uppercase tracking-widest font-semibold transition-colors ${tab === "tools" ? "bg-white/15 text-white" : "text-white/55 hover:text-white/80"}`}
-        >
-          <Layers className="h-3 w-3" />tools
-          <span className="tabular-nums ml-1 opacity-70">{totalTools}</span>
-        </button>
-        <button
-          onClick={() => setTab("gencode")}
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-mono uppercase tracking-widest font-semibold transition-colors ${tab === "gencode" ? "bg-white/15 text-white" : "text-white/55 hover:text-white/80"}`}
-        >
-          <Terminal className="h-3 w-3" />generated code
-          <span className="tabular-nums ml-1 opacity-70">{codeSteps.length}</span>
-        </button>
-      </div>
-      {tab === "tools" && (
-        <div className="flex-1 overflow-y-auto py-2">
-          {totalTools === 0 ? (
-            <div className="flex flex-col items-center justify-center h-32 text-center px-4">
-              <Layers className="h-6 w-6 text-white/10 mb-2" />
-              <p className="text-[11px] font-mono text-white/20">No tools fired yet</p>
-            </div>
-          ) : (
-            phases.map(phase => {
-              const entries  = stack[phase] ?? [];
-              if (entries.length === 0) return null;
-              const meta     = phase !== "OTHER" ? PHASE_META[phase as Phase] : null;
-              const isOpen   = !collapsed[phase];
-              const okCount  = entries.filter(e => e.resultEv?.ok !== false && e.resultEv).length;
-              const errCount = entries.filter(e => e.resultEv?.ok === false).length;
-              return (
-                <div key={phase} className="mb-1">
-                  <button
-                    onClick={() => toggle(phase)}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-white/4 transition-colors group"
-                  >
-                    <span className={`flex items-center gap-1.5 ${meta?.color ?? "text-white/70"}`} style={{filter:"brightness(1.4)"}}>
-                      {meta?.icon ?? <Wrench className="h-3 w-3"/>}
-                      <span className="text-[11px] font-mono uppercase tracking-widest font-bold">{phase}</span>
-                    </span>
-                    <span className="text-[10px] font-mono text-white/50 ml-auto tabular-nums">{entries.length}</span>
-                    {okCount  > 0 && <span className="text-[10px] font-mono text-emerald-400 tabular-nums">✓{okCount}</span>}
-                    {errCount > 0 && <span className="text-[10px] font-mono text-red-400 tabular-nums">✗{errCount}</span>}
-                    {isOpen
-                      ? <ChevronDown  className="h-2.5 w-2.5 text-white/50 group-hover:text-white/80 transition-colors"/>
-                      : <ChevronRight className="h-2.5 w-2.5 text-white/50 group-hover:text-white/80 transition-colors"/>}
-                  </button>
-                  {isOpen && (
-                    <div className="mx-2 mb-1 space-y-px">
-                      {entries.map((entry, i) => {
-                        const tool  = entry.callEv.tool_name ?? entry.callEv.message.replace("⚙ ","");
-                        const isOk  = entry.resultEv ? entry.resultEv.ok !== false : null;
-                        const summ  = entry.resultEv?.summary ?? entry.resultEv?.message?.replace("  ↳ ","") ?? null;
-                        return (
-                          <div key={i} className={`rounded px-2 py-1 border-l-2 ${
-                            isOk === true  ? "border-l-emerald-500/50 bg-emerald-500/5" :
-                            isOk === false ? "border-l-red-500/50 bg-red-500/5" :
-                            "border-l-white/10 bg-white/3"
-                          }`}>
-                            <div className="flex items-center gap-1.5">
-                              {isOk === true  && <CheckCircle2 className="h-2.5 w-2.5 text-emerald-400/70 shrink-0"/>}
-                              {isOk === false && <XCircle      className="h-2.5 w-2.5 text-red-400/70 shrink-0"/>}
-                              {isOk === null  && <div className="h-2.5 w-2.5 shrink-0 flex items-center justify-center"><span className="h-1 w-1 rounded-full bg-white/20 pulse-dot"/></div>}
-                              <span className="text-[12px] font-mono text-white font-semibold flex-1 truncate">{tool}</span>
-                            </div>
-                            {summ && (
-                              <p className={`text-[11px] font-mono mt-0.5 pl-4 leading-relaxed ${isOk === false ? "text-red-400" : "text-white/60"}`}>
-                                {summ.length > 80 ? summ.slice(0, 80) + "…" : summ}
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-      )}
-      {tab === "gencode" && (
-        <div className="flex-1 overflow-y-auto py-2">
-          {codeSteps.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-32 text-center px-4">
-              <Terminal className="h-6 w-6 text-white/10 mb-2" />
-              <p className="text-[11px] font-mono text-white/20">No code generated yet</p>
-            </div>
-          ) : (
-            codeSteps.map((ev, i) => <CodeStepBlock key={i} ev={ev} />)
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function OrchestrationConsole() {
-  const [events,       setEvents]       = useState<AgentEvent[]>(_persistedEvents);
+  const [events,       setEvents]       = useState<AgentEvent[]>([...eventsStore.events]);
   const [connected,    setConnected]    = useState(false);
   const [paused,       setPaused]       = useState(false);
   const [filter,       setFilter]       = useState("all");
@@ -382,7 +193,7 @@ function OrchestrationConsole() {
   }, [connected, startTime]);
 
   useEffect(() => onReset(() => {
-    _persistedEvents = [];
+    eventsStore.events.splice(0, eventsStore.events.length);
     setEvents([]);
     setConnected(false);
     setStartTime(null);
@@ -403,15 +214,17 @@ function OrchestrationConsole() {
             pipeline:  ev.pipeline || "",
           });
           if (!pausedRef.current) {
-            _persistedEvents = [..._persistedEvents.slice(-500), ev];
-            setEvents([..._persistedEvents]);
+            if (eventsStore.events.length >= 500) eventsStore.events.splice(0, eventsStore.events.length - 499);
+            eventsStore.events.push(ev);
+            setEvents([...eventsStore.events]);
           }
           return;
         }
         if (ev.type === "complete") setPendingInput(null);
         if (pausedRef.current) return;
-        _persistedEvents = [..._persistedEvents.slice(-500), ev];
-        setEvents([..._persistedEvents]);
+        if (eventsStore.events.length >= 500) eventsStore.events.splice(0, eventsStore.events.length - 499);
+        eventsStore.events.push(ev);
+        setEvents([...eventsStore.events]);
       } catch {}
     };
     return () => es.close();
@@ -538,7 +351,7 @@ function OrchestrationConsole() {
               className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-border bg-surface-2 text-[12px] font-mono hover:bg-surface-3 transition-colors">
               {paused ? <><Play className="h-3 w-3 text-success" />resume</> : <><Pause className="h-3 w-3" />pause</>}
             </button>
-            <button onClick={() => { _persistedEvents = []; setEvents([]); setStartTime(null); setElapsed("00:00"); }}
+            <button onClick={() => { eventsStore.events.splice(0, eventsStore.events.length); setEvents([]); setStartTime(null); setElapsed("00:00"); }}
               className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-border bg-surface-2 text-[12px] font-mono hover:bg-surface-3 hover:text-danger transition-colors text-muted-foreground">
               <Trash2 className="h-3 w-3" />
             </button>
@@ -560,8 +373,8 @@ function OrchestrationConsole() {
         {/* Main body */}
         <div className="flex-1 flex overflow-hidden min-h-0">
 
-          {/* Left: event timeline */}
-          <div ref={scrollRef} className="flex-[75] min-w-0 overflow-y-auto bg-white px-5 py-4">
+          {/* Event timeline */}
+          <div ref={scrollRef} className="flex-1 min-w-0 overflow-y-auto bg-white px-5 py-4">
             {timelineItems.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground gap-3">
                 <div className="h-14 w-14 rounded-xl bg-surface-2 border border-border flex items-center justify-center">
@@ -687,13 +500,6 @@ function OrchestrationConsole() {
                 })}
               </div>
             )}
-          </div>
-
-          <div className="w-px bg-border shrink-0" />
-
-          {/* Right: tool stack */}
-          <div className="flex-[22] min-w-0 overflow-hidden flex flex-col" style={{background:"oklch(0.11 0.015 260)"}}>
-            <ToolStackPanel events={events} />
           </div>
         </div>
 

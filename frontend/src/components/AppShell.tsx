@@ -16,8 +16,9 @@ import {
 import { cn } from "@/lib/utils";
 
 const navMain = [
-  { to: "/",              label: "Executive",   icon: LayoutDashboard },
-  { to: "/orchestration", label: "Logs",        icon: Terminal },
+  { to: "/",               label: "Executive",     icon: LayoutDashboard },
+  { to: "/orchestration",  label: "Logs",          icon: Terminal },
+  { to: "/observability",  label: "Observability", icon: Activity },
   { to: "/workbench",     label: "Workbench",   icon: Code2 },
   { to: "/validation",    label: "Validation",  icon: ShieldCheck },
   { to: "/deployments",   label: "Deployments", icon: Rocket },

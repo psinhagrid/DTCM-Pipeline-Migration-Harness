@@ -13,6 +13,7 @@ import { Route as WorkbenchRouteImport } from './routes/workbench'
 import { Route as ValidationRouteImport } from './routes/validation'
 import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as OrchestrationRouteImport } from './routes/orchestration'
+import { Route as ObservabilityRouteImport } from './routes/observability'
 import { Route as GovernanceRouteImport } from './routes/governance'
 import { Route as DeploymentsRouteImport } from './routes/deployments'
 import { Route as ContextGraphRouteImport } from './routes/context-graph'
@@ -37,6 +38,11 @@ const SkillsRoute = SkillsRouteImport.update({
 const OrchestrationRoute = OrchestrationRouteImport.update({
   id: '/orchestration',
   path: '/orchestration',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ObservabilityRoute = ObservabilityRouteImport.update({
+  id: '/observability',
+  path: '/observability',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GovernanceRoute = GovernanceRouteImport.update({
@@ -71,6 +77,7 @@ export interface FileRoutesByFullPath {
   '/context-graph': typeof ContextGraphRoute
   '/deployments': typeof DeploymentsRoute
   '/governance': typeof GovernanceRoute
+  '/observability': typeof ObservabilityRoute
   '/orchestration': typeof OrchestrationRoute
   '/skills': typeof SkillsRoute
   '/validation': typeof ValidationRoute
@@ -82,6 +89,7 @@ export interface FileRoutesByTo {
   '/context-graph': typeof ContextGraphRoute
   '/deployments': typeof DeploymentsRoute
   '/governance': typeof GovernanceRoute
+  '/observability': typeof ObservabilityRoute
   '/orchestration': typeof OrchestrationRoute
   '/skills': typeof SkillsRoute
   '/validation': typeof ValidationRoute
@@ -94,6 +102,7 @@ export interface FileRoutesById {
   '/context-graph': typeof ContextGraphRoute
   '/deployments': typeof DeploymentsRoute
   '/governance': typeof GovernanceRoute
+  '/observability': typeof ObservabilityRoute
   '/orchestration': typeof OrchestrationRoute
   '/skills': typeof SkillsRoute
   '/validation': typeof ValidationRoute
@@ -107,6 +116,7 @@ export interface FileRouteTypes {
     | '/context-graph'
     | '/deployments'
     | '/governance'
+    | '/observability'
     | '/orchestration'
     | '/skills'
     | '/validation'
@@ -118,6 +128,7 @@ export interface FileRouteTypes {
     | '/context-graph'
     | '/deployments'
     | '/governance'
+    | '/observability'
     | '/orchestration'
     | '/skills'
     | '/validation'
@@ -129,6 +140,7 @@ export interface FileRouteTypes {
     | '/context-graph'
     | '/deployments'
     | '/governance'
+    | '/observability'
     | '/orchestration'
     | '/skills'
     | '/validation'
@@ -141,6 +153,7 @@ export interface RootRouteChildren {
   ContextGraphRoute: typeof ContextGraphRoute
   DeploymentsRoute: typeof DeploymentsRoute
   GovernanceRoute: typeof GovernanceRoute
+  ObservabilityRoute: typeof ObservabilityRoute
   OrchestrationRoute: typeof OrchestrationRoute
   SkillsRoute: typeof SkillsRoute
   ValidationRoute: typeof ValidationRoute
@@ -168,6 +181,13 @@ declare module '@tanstack/react-router' {
       path: '/skills'
       fullPath: '/skills'
       preLoaderRoute: typeof SkillsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/observability': {
+      id: '/observability'
+      path: '/observability'
+      fullPath: '/observability'
+      preLoaderRoute: typeof ObservabilityRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/orchestration': {
@@ -221,6 +241,7 @@ const rootRouteChildren: RootRouteChildren = {
   ContextGraphRoute: ContextGraphRoute,
   DeploymentsRoute: DeploymentsRoute,
   GovernanceRoute: GovernanceRoute,
+  ObservabilityRoute: ObservabilityRoute,
   OrchestrationRoute: OrchestrationRoute,
   SkillsRoute: SkillsRoute,
   ValidationRoute: ValidationRoute,
