@@ -17,6 +17,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter
 from pydantic import BaseModel
+from orchestrator import conversions as _pipeline_conversions
 
 router = APIRouter(prefix="/internal")
 
@@ -234,7 +235,16 @@ async def transform_hql(body: TransformHqlBody):
             body.pipeline,
             body.metadata,
         )
-        return _serialise(result)
+        result = _serialise(result)
+        if "error" not in result:
+            conv = _pipeline_conversions.setdefault(body.pipeline, {
+                "files": [], "source_language": "HiveQL",
+                "target_language": "PySpark", "transformations_applied": 0,
+            })
+            conv["files"] = [f for f in conv.get("files", []) if f.get("filename") != body.filename]
+            conv["files"].append(result)
+            conv["transformations_applied"] = sum(f.get("transformations_applied", 0) for f in conv["files"])
+        return result
     except Exception as e:
         return {"error": str(e)}
 
@@ -257,7 +267,12 @@ async def generate_dag(body: GenerateDagBody):
             body.files,
             body.complexity,
         )
-        return _serialise(result)
+        result = _serialise(result)
+        if "error" not in result:
+            conv = _pipeline_conversions.setdefault(body.pipeline, {"files": []})
+            conv["dag"]          = result.get("dag_content")
+            conv["dag_filename"] = result.get("dag_filename")
+        return result
     except Exception as e:
         return {"error": str(e)}
 
