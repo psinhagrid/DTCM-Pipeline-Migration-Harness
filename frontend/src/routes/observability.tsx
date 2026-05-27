@@ -161,12 +161,9 @@ function CodeBlock({ ev, index }: { ev: AgentEvent; index: number }) {
         <div className="h-6 w-6 rounded-md bg-purple-100 border border-purple-200 flex items-center justify-center shrink-0">
           <Brain className="h-3.5 w-3.5 text-purple-600" />
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-mono text-purple-400 uppercase tracking-widest">step {ev.step ?? index + 1}</span>
-            <span className="text-[10px] font-mono text-muted-foreground/40 tabular-nums">{lines.length} lines</span>
-          </div>
-          <p className="text-[13px] text-foreground/80 font-medium truncate mt-0.5">{ev.message}</p>
+        <div className="flex-1 min-w-0 flex items-center gap-3">
+          <span className="text-[13px] font-semibold text-foreground/80">Step {ev.step ?? index + 1} · Generated Code</span>
+          <span className="text-[10px] font-mono text-muted-foreground/40 tabular-nums">{lines.length} lines</span>
         </div>
         <span className="text-[10px] font-mono text-muted-foreground/40 tabular-nums shrink-0">{formatTs(ev.timestamp)}</span>
         {open
