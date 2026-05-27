@@ -115,6 +115,8 @@ const EDGE_COLORS: Record<string,string> = {
 function FullGraphVisual({ graph }: { graph: FullGraph }) {
   const [hovered,  setHovered]  = useState<string|null>(null);
   const [selected, setSelected] = useState<FullGraphNode|null>(null);
+  const [zoom, setZoom] = useState(1);
+  const clampZoom = (z: number) => Math.min(3, Math.max(0.3, z));
 
   const R=22, PAD=60;
   const svgW=1300, svgH=720;
@@ -149,7 +151,16 @@ function FullGraphVisual({ graph }: { graph: FullGraph }) {
     <div className="flex gap-4 items-start h-full overflow-hidden">
       <div className="flex-1 flex flex-col overflow-hidden rounded-xl border border-border bg-white shadow-sm">
         <div className="flex items-center gap-4 px-5 py-3 border-b border-border shrink-0">
-          <span className="text-[11px] font-mono text-muted-foreground/50 shrink-0">{graph.nodes.length} nodes · {graph.edges.length} edges · hover to highlight</span>
+          <span className="text-[11px] font-mono text-muted-foreground/50 shrink-0">{graph.nodes.length} nodes · {graph.edges.length} edges</span>
+          <div className="flex items-center gap-1 ml-2 shrink-0">
+            <button onClick={() => setZoom(z => clampZoom(z+0.15))}
+              className="h-6 w-6 rounded border border-border bg-surface-2 text-[13px] font-bold text-foreground/70 hover:bg-surface-3 flex items-center justify-center">+</button>
+            <span className="text-[10px] font-mono text-muted-foreground/50 w-8 text-center tabular-nums">{Math.round(zoom*100)}%</span>
+            <button onClick={() => setZoom(z => clampZoom(z-0.15))}
+              className="h-6 w-6 rounded border border-border bg-surface-2 text-[13px] font-bold text-foreground/70 hover:bg-surface-3 flex items-center justify-center">−</button>
+            <button onClick={() => setZoom(1)}
+              className="h-6 px-2 rounded border border-border bg-surface-2 text-[10px] font-mono text-muted-foreground/60 hover:bg-surface-3 ml-1">reset</button>
+          </div>
           <div className="ml-auto flex items-center gap-5 flex-wrap justify-end">
             {TYPE_ORDER.map(t => {
               const count = graph.nodes.filter(n => n.type===t).length;
@@ -165,8 +176,11 @@ function FullGraphVisual({ graph }: { graph: FullGraph }) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto">
-          <svg width={svgW} height={svgH} style={{display:"block"}}>
+        <div className="flex-1 overflow-auto"
+          onWheel={e => { e.preventDefault(); setZoom(z => clampZoom(z - e.deltaY * 0.001)); }}
+          style={{cursor: "grab"}}>
+          <svg width={svgW} height={svgH}
+            style={{display:"block", transform:`scale(${zoom})`, transformOrigin:"top left", transition:"transform 0.1s"}}>
             <defs>
               <marker id="arr-blue" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L0,7 L7,3.5 z" fill="#93c5fd" opacity="0.8"/></marker>
               <marker id="arr-orange" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L0,7 L7,3.5 z" fill="#fcd34d" opacity="0.8"/></marker>
