@@ -9,7 +9,6 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as WorkbenchRouteImport } from './routes/workbench'
 import { Route as ValidationRouteImport } from './routes/validation'
 import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as OrchestrationRouteImport } from './routes/orchestration'
@@ -20,11 +19,6 @@ import { Route as ContextGraphRouteImport } from './routes/context-graph'
 import { Route as AuditRouteImport } from './routes/audit'
 import { Route as IndexRouteImport } from './routes/index'
 
-const WorkbenchRoute = WorkbenchRouteImport.update({
-  id: '/workbench',
-  path: '/workbench',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ValidationRoute = ValidationRouteImport.update({
   id: '/validation',
   path: '/validation',
@@ -81,7 +75,6 @@ export interface FileRoutesByFullPath {
   '/orchestration': typeof OrchestrationRoute
   '/skills': typeof SkillsRoute
   '/validation': typeof ValidationRoute
-  '/workbench': typeof WorkbenchRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -93,7 +86,6 @@ export interface FileRoutesByTo {
   '/orchestration': typeof OrchestrationRoute
   '/skills': typeof SkillsRoute
   '/validation': typeof ValidationRoute
-  '/workbench': typeof WorkbenchRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -106,7 +98,6 @@ export interface FileRoutesById {
   '/orchestration': typeof OrchestrationRoute
   '/skills': typeof SkillsRoute
   '/validation': typeof ValidationRoute
-  '/workbench': typeof WorkbenchRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -120,7 +111,6 @@ export interface FileRouteTypes {
     | '/orchestration'
     | '/skills'
     | '/validation'
-    | '/workbench'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -132,7 +122,6 @@ export interface FileRouteTypes {
     | '/orchestration'
     | '/skills'
     | '/validation'
-    | '/workbench'
   id:
     | '__root__'
     | '/'
@@ -144,7 +133,6 @@ export interface FileRouteTypes {
     | '/orchestration'
     | '/skills'
     | '/validation'
-    | '/workbench'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -157,18 +145,10 @@ export interface RootRouteChildren {
   OrchestrationRoute: typeof OrchestrationRoute
   SkillsRoute: typeof SkillsRoute
   ValidationRoute: typeof ValidationRoute
-  WorkbenchRoute: typeof WorkbenchRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/workbench': {
-      id: '/workbench'
-      path: '/workbench'
-      fullPath: '/workbench'
-      preLoaderRoute: typeof WorkbenchRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/validation': {
       id: '/validation'
       path: '/validation'
@@ -183,18 +163,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SkillsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/observability': {
-      id: '/observability'
-      path: '/observability'
-      fullPath: '/observability'
-      preLoaderRoute: typeof ObservabilityRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/orchestration': {
       id: '/orchestration'
       path: '/orchestration'
       fullPath: '/orchestration'
       preLoaderRoute: typeof OrchestrationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/observability': {
+      id: '/observability'
+      path: '/observability'
+      fullPath: '/observability'
+      preLoaderRoute: typeof ObservabilityRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/governance': {
@@ -245,7 +225,6 @@ const rootRouteChildren: RootRouteChildren = {
   OrchestrationRoute: OrchestrationRoute,
   SkillsRoute: SkillsRoute,
   ValidationRoute: ValidationRoute,
-  WorkbenchRoute: WorkbenchRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
