@@ -17,7 +17,7 @@ RE_IMPORT_F      = re.compile(r'from\s+pyspark\.sql\s+import\s+functions\s+as\s+
 RE_HQL_INSERT    = re.compile(r'\bINSERT\b', re.I)
 RE_HQL_FUNCTIONS = re.compile(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(', re.I)
 
-# Hive built-ins and SQL keywords — same exclusion set as assess_subagent
+# Hive built-ins and SQL keywords — same exclusion set as assess_module
 _EXCLUDE: set[str] = {
     "sum","count","avg","min","max","coalesce","nvl","substr","substring","length",
     "trim","upper","lower","concat","concat_ws","split","regexp_replace","regexp_extract",

@@ -16,10 +16,10 @@ async def build_graph():
     Runs all pipelines sequentially to avoid Neo4j race conditions.
     """
     from neo4j import GraphDatabase
-    from modules.assess_subagent.utils.hql_utils import parse_file, compute_score, classify, EFFORT
-    from modules.assess_subagent.tools.scan_repo_tool import scan_repo_tool
-    from modules.assess_subagent.tools.lineage_extract_tool import lineage_extract_tool
-    from modules.assess_subagent.tools.neo4j_write_graph_tool import neo4j_write_graph_tool
+    from modules.assess_module.utils.hql_utils import parse_file, compute_score, classify, EFFORT
+    from modules.assess_module.tools.scan_repo_tool import scan_repo_tool
+    from modules.assess_module.tools.lineage_extract_tool import lineage_extract_tool
+    from modules.assess_module.tools.neo4j_write_graph_tool import neo4j_write_graph_tool
 
     if not _PIPELINES_ROOT.exists():
         return {"status": "error", "error": "pipelines/ directory not found"}

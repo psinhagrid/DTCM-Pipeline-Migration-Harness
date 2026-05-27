@@ -56,7 +56,7 @@ class ScanRepoBody(BaseModel):
 @router.post("/scan-repo")
 async def scan_repo(body: ScanRepoBody):
     try:
-        from modules.assess_subagent.tools.scan_repo_tool import scan_repo_tool
+        from modules.assess_module.tools.scan_repo_tool import scan_repo_tool
         pipeline_dir = PIPELINES_ROOT / body.pipeline
         result = await asyncio.to_thread(scan_repo_tool, pipeline_dir)
         return {
@@ -78,7 +78,7 @@ class ParseHqlBody(BaseModel):
 @router.post("/parse-hql")
 async def parse_hql(body: ParseHqlBody):
     try:
-        from modules.assess_subagent.tools.parse_hql_tool import parse_hql_tool
+        from modules.assess_module.tools.parse_hql_tool import parse_hql_tool
         path   = PIPELINES_ROOT / body.pipeline / body.filename
         result = await asyncio.to_thread(parse_hql_tool, path)
         return _serialise(result)
@@ -98,7 +98,7 @@ class LineageExtractBody(BaseModel):
 @router.post("/lineage-extract")
 async def lineage_extract(body: LineageExtractBody):
     try:
-        from modules.assess_subagent.tools.lineage_extract_tool import lineage_extract_tool
+        from modules.assess_module.tools.lineage_extract_tool import lineage_extract_tool
         pipeline_dir = PIPELINES_ROOT / body.pipeline
         result = await asyncio.to_thread(
             lineage_extract_tool,
@@ -131,7 +131,7 @@ class ClassifyComplexityBody(BaseModel):
 @router.post("/classify-complexity")
 async def classify_complexity(body: ClassifyComplexityBody):
     try:
-        from modules.assess_subagent.tools.classify_complexity_tool import classify_complexity_tool
+        from modules.assess_module.tools.classify_complexity_tool import classify_complexity_tool
         result = await asyncio.to_thread(
             classify_complexity_tool,
             set(body.tables),
@@ -162,7 +162,7 @@ class Neo4jWriteBody(BaseModel):
 @router.post("/neo4j-write")
 async def neo4j_write(body: Neo4jWriteBody):
     try:
-        from modules.assess_subagent.tools.neo4j_write_graph_tool import neo4j_write_graph_tool
+        from modules.assess_module.tools.neo4j_write_graph_tool import neo4j_write_graph_tool
         result = await asyncio.to_thread(
             neo4j_write_graph_tool,
             body.pipeline,
@@ -188,7 +188,7 @@ class QueryGraphBody(BaseModel):
 @router.post("/query-graph")
 async def query_graph(body: QueryGraphBody):
     try:
-        from modules.assess_subagent.tools.query_graph_tool import query_graph_tool
+        from modules.assess_module.tools.query_graph_tool import query_graph_tool
         result = await asyncio.to_thread(query_graph_tool, body.pipeline, body.query)
         return _serialise(result)
     except Exception as e:
@@ -208,7 +208,7 @@ class ListHqlFilesBody(BaseModel):
 @router.post("/list-hql-files")
 async def list_hql_files(body: ListHqlFilesBody):
     try:
-        from modules.convert_subagent.tools.list_hql_files_tool import list_hql_files_tool
+        from modules.convert_module.tools.list_hql_files_tool import list_hql_files_tool
         result = await asyncio.to_thread(list_hql_files_tool, body.pipeline)
         return _serialise(result)
     except Exception as e:
@@ -227,7 +227,7 @@ class TransformHqlBody(BaseModel):
 @router.post("/transform-hql")
 async def transform_hql(body: TransformHqlBody):
     try:
-        from modules.convert_subagent.tools.transform_hql_tool import transform_hql_tool
+        from modules.convert_module.tools.transform_hql_tool import transform_hql_tool
         result = await asyncio.to_thread(
             transform_hql_tool,
             body.filename,
@@ -250,7 +250,7 @@ class GenerateDagBody(BaseModel):
 @router.post("/generate-dag")
 async def generate_dag(body: GenerateDagBody):
     try:
-        from modules.convert_subagent.tools.generate_dag_tool import generate_dag_tool
+        from modules.convert_module.tools.generate_dag_tool import generate_dag_tool
         result = await asyncio.to_thread(
             generate_dag_tool,
             body.pipeline,
@@ -277,7 +277,7 @@ class ValidatePysparkBody(BaseModel):
 @router.post("/validate-pyspark")
 async def validate_pyspark(body: ValidatePysparkBody):
     try:
-        from modules.reconcile_subagent.tools.validate_pyspark_tool import validate_pyspark_tool
+        from modules.reconcile_module.tools.validate_pyspark_tool import validate_pyspark_tool
         result = await asyncio.to_thread(
             validate_pyspark_tool,
             body.filename,
@@ -300,7 +300,7 @@ class AnalyzeFileBody(BaseModel):
 @router.post("/analyze-file")
 async def analyze_file(body: AnalyzeFileBody):
     try:
-        from modules.reconcile_subagent.tools.analyze_file_tool import analyze_file_tool
+        from modules.reconcile_module.tools.analyze_file_tool import analyze_file_tool
         result = await asyncio.to_thread(
             analyze_file_tool,
             body.filename,
@@ -321,7 +321,7 @@ class WorkflowParityBody(BaseModel):
 @router.post("/workflow-parity")
 async def workflow_parity(body: WorkflowParityBody):
     try:
-        from modules.reconcile_subagent.tools.workflow_parity_tool import workflow_parity_tool
+        from modules.reconcile_module.tools.workflow_parity_tool import workflow_parity_tool
         result = await asyncio.to_thread(workflow_parity_tool, body.conversion)
         return _serialise(result)
     except Exception as e:
@@ -339,7 +339,7 @@ class RuntimeValidationBody(BaseModel):
 @router.post("/runtime-validation")
 async def runtime_validation(body: RuntimeValidationBody):
     try:
-        from modules.reconcile_subagent.tools.runtime_validation_tool import runtime_validation_tool
+        from modules.reconcile_module.tools.runtime_validation_tool import runtime_validation_tool
         result = await asyncio.to_thread(
             runtime_validation_tool,
             body.pipeline,
@@ -364,7 +364,7 @@ class CompileReportBody(BaseModel):
 @router.post("/compile-report")
 async def compile_report(body: CompileReportBody):
     try:
-        from modules.reconcile_subagent.tools.compile_report_tool import compile_report_tool
+        from modules.reconcile_module.tools.compile_report_tool import compile_report_tool
         result = await asyncio.to_thread(
             compile_report_tool,
             body.pipeline,
@@ -392,7 +392,7 @@ class ValidateArtifactsBody(BaseModel):
 @router.post("/validate-artifacts")
 async def validate_artifacts(body: ValidateArtifactsBody):
     try:
-        from modules.deploy_subagent.tools.validate_artifacts_tool import validate_artifacts_tool
+        from modules.deploy_module.tools.validate_artifacts_tool import validate_artifacts_tool
         result = await asyncio.to_thread(
             validate_artifacts_tool,
             body.conversion,
@@ -415,7 +415,7 @@ class GenerateCicdBody(BaseModel):
 @router.post("/generate-cicd")
 async def generate_cicd(body: GenerateCicdBody):
     try:
-        from modules.deploy_subagent.tools.generate_cicd_tool import generate_cicd_tool
+        from modules.deploy_module.tools.generate_cicd_tool import generate_cicd_tool
         result = await asyncio.to_thread(
             generate_cicd_tool,
             body.pipeline,
@@ -439,7 +439,7 @@ class RunSmokeTestsBody(BaseModel):
 @router.post("/run-smoke-tests")
 async def run_smoke_tests(body: RunSmokeTestsBody):
     try:
-        from modules.deploy_subagent.tools.run_smoke_tests_tool import run_smoke_tests_tool
+        from modules.deploy_module.tools.run_smoke_tests_tool import run_smoke_tests_tool
         result = await asyncio.to_thread(
             run_smoke_tests_tool,
             body.pipeline,
@@ -462,7 +462,7 @@ class ComputeGovernanceBody(BaseModel):
 @router.post("/compute-governance")
 async def compute_governance(body: ComputeGovernanceBody):
     try:
-        from modules.deploy_subagent.tools.compute_governance_tool import compute_governance_tool
+        from modules.deploy_module.tools.compute_governance_tool import compute_governance_tool
         result = await asyncio.to_thread(
             compute_governance_tool,
             body.artifact_checks,
@@ -490,7 +490,7 @@ class WriteManifestsBody(BaseModel):
 @router.post("/write-manifests")
 async def write_manifests(body: WriteManifestsBody):
     try:
-        from modules.deploy_subagent.tools.write_manifests_tool import write_manifests_tool
+        from modules.deploy_module.tools.write_manifests_tool import write_manifests_tool
         result = await asyncio.to_thread(
             write_manifests_tool,
             body.pipeline,
@@ -519,10 +519,10 @@ class ReadSkillBody(BaseModel):
 
 _SKILL_SEARCH_PATHS: list[Path] = [
     _ROOT / "skills",
-    _ROOT / "modules" / "assess_subagent"    / "skills",
-    _ROOT / "modules" / "convert_subagent"   / "skills",
-    _ROOT / "modules" / "reconcile_subagent" / "skills",
-    _ROOT / "modules" / "deploy_subagent"    / "skills",
+    _ROOT / "modules" / "assess_module"    / "skills",
+    _ROOT / "modules" / "convert_module"   / "skills",
+    _ROOT / "modules" / "reconcile_module" / "skills",
+    _ROOT / "modules" / "deploy_module"    / "skills",
 ]
 
 

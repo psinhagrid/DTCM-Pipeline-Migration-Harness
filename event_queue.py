@@ -21,10 +21,10 @@ _ICONS = {
 
 _AGENT_SHORT = {
     "supervisor":         "SUP",
-    "assess_subagent":    "ASS",
-    "convert_subagent":   "CVT",
-    "reconcile_subagent": "REC",
-    "deploy_subagent":    "DEP",
+    "assess_module":    "ASS",
+    "convert_module":   "CVT",
+    "reconcile_module": "REC",
+    "deploy_module":    "DEP",
 }
 
 # ── User input mechanism ──────────────────────────────────────────────────────

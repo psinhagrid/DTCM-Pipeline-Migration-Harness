@@ -1,5 +1,5 @@
 """
-Neo4j graph client — lineage queries for any subagent or endpoint.
+Neo4j graph client — lineage queries for any module or endpoint.
 Connection config: NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD in .env
 
 Import from anywhere:
