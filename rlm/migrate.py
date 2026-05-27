@@ -45,7 +45,7 @@ NAME = "rlm_agent"
 CONFIG = RLMConfig(
     primary_agent          = os.getenv("RLM_PRIMARY_MODEL", "claude-sonnet-4-6"),
     max_depth              = 4,
-    max_calls_per_module = 60,
+    max_calls_per_subagent = 60,
     truncate_len           = 6000,
     max_money_spent        = 5.0,
 )
