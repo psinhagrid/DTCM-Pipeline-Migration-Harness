@@ -120,10 +120,23 @@ function Workbench() {
                       : "bg-white border-border text-foreground hover:border-primary/50"
                   }`}
                 >
-                  🗂 {conversion.dag_filename}
+                  <FileCode2 className="h-4 w-4" /> {conversion.dag_filename}
                 </button>
               )}
             </div>
+
+            {/* Empty state — conversion ran but no files extracted */}
+            {!conversion.files?.length && !showDag && (
+              <div className="flex flex-col items-center justify-center py-20 text-center gap-3">
+                <div className="h-14 w-14 rounded-xl bg-surface-2 border border-border flex items-center justify-center">
+                  <FileCode2 className="h-6 w-6 text-muted-foreground/30" />
+                </div>
+                <p className="text-[15px] font-medium text-foreground/50">No converted files available</p>
+                <p className="text-[13px] text-muted-foreground/50 font-mono">
+                  {conversion.dag ? "Select the DAG file above to view generated code." : "Run the pipeline again to generate converted files."}
+                </p>
+              </div>
+            )}
 
             {/* Diff view — two panes */}
             {activeFile && !showDag && (
