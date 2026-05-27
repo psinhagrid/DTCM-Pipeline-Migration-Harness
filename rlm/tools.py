@@ -1,3 +1,17 @@
+def _deep_py(obj):
+    """Recursively convert Pyodide JsProxy objects to native Python types before JSON serialization."""
+    if hasattr(obj, "to_py"):
+        try:
+            obj = obj.to_py()
+        except Exception:
+            pass
+    if isinstance(obj, dict):
+        return {k: _deep_py(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_deep_py(v) for v in obj]
+    return obj
+
+
 def list_skills() -> list:
     """List all available skill names. Call this first to discover what skills exist before calling read_skill."""
     import json, os
@@ -500,7 +514,7 @@ def validate_artifacts(conversion: dict, reconcile: dict) -> dict:
     import js
     async def _call():
         base = os.environ.get("DTCM_BACKEND_URL", "http://localhost:8001")
-        body = json.dumps({"conversion": conversion, "reconcile": reconcile}, default=str)
+        body = json.dumps({"conversion": _deep_py(conversion), "reconcile": _deep_py(reconcile)})
         opts = to_js({"method": "POST", "body": body, "headers": {"Content-Type": "application/json"}},
                      dict_converter=js.Object.fromEntries)
         resp = await js.fetch(f"{base}/internal/validate-artifacts", opts)
@@ -564,7 +578,7 @@ def run_smoke_tests(pipeline: str, conversion: dict, reconcile: dict) -> dict:
     import js
     async def _call():
         base = os.environ.get("DTCM_BACKEND_URL", "http://localhost:8001")
-        body = json.dumps({"pipeline": pipeline, "conversion": conversion, "reconcile": reconcile}, default=str)
+        body = json.dumps({"pipeline": pipeline, "conversion": _deep_py(conversion), "reconcile": _deep_py(reconcile)})
         opts = to_js({"method": "POST", "body": body, "headers": {"Content-Type": "application/json"}},
                      dict_converter=js.Object.fromEntries)
         resp = await js.fetch(f"{base}/internal/run-smoke-tests", opts)

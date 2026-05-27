@@ -3,6 +3,7 @@ import { AppShell, Panel, Badge } from "@/components/AppShell";
 import { useEffect, useState } from "react";
 import { FileCode2, ChevronDown } from "lucide-react";
 import { onReset } from "@/lib/reset-store";
+import { TOKEN_COLORS, tokenizeLine, type Lang } from "@/lib/highlight";
 
 export const Route = createFileRoute("/workbench")({ component: Workbench });
 
@@ -166,15 +167,19 @@ function Workbench() {
   );
 }
 
-function CodePane({ title, code, lang }: { title: string; code: string; lang: "hive" | "python" }) {
+function CodePane({ title, code, lang }: { title: string; code: string; lang: Lang }) {
   return (
     <Panel title={title}>
-      <div className="overflow-auto max-h-[600px]">
-        <pre className="p-5 text-[13.5px] leading-[1.7] font-mono text-foreground/90">
-          {code?.split("\n").map((line, i) => (
-            <div key={i} className="flex gap-4 group hover:bg-surface-2/50 rounded">
-              <span className="text-muted-foreground/40 select-none w-8 text-right shrink-0 text-[12px] pt-px">{i + 1}</span>
-              <span className="flex-1 whitespace-pre">{line}</span>
+      <div className="overflow-auto max-h-[600px]" style={{ background: "oklch(0.13 0.02 265)" }}>
+        <pre className="p-4 text-[13px] leading-[1.65] font-mono">
+          {(code ?? "").split("\n").map((line, i) => (
+            <div key={i} className="flex gap-3 group hover:bg-white/[0.04] rounded px-1">
+              <span className="text-slate-600 select-none w-7 text-right shrink-0 text-[11px] pt-px tabular-nums">{i + 1}</span>
+              <span className="flex-1 whitespace-pre">
+                {tokenizeLine(line, lang).map((tok, j) => (
+                  <span key={j} className={TOKEN_COLORS[tok.kind] ?? "text-slate-200"}>{tok.text}</span>
+                ))}
+              </span>
             </div>
           ))}
         </pre>

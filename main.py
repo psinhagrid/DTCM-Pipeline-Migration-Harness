@@ -1,10 +1,13 @@
 import asyncio
 import json
+import logging
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / ".env")
+
+logging.getLogger("uvicorn.access").disabled = True
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -170,9 +173,7 @@ async def run(pipeline: str = "daily_revenue_agg"):
 
 @app.get("/deployment/{pipeline}")
 def get_deployment(pipeline: str):
-    if pipeline not in pipeline_deployments:
-        raise HTTPException(status_code=404, detail="No deployment yet for this pipeline")
-    return pipeline_deployments[pipeline]
+    return pipeline_deployments.get(pipeline)
 
 
 @app.post("/reset")

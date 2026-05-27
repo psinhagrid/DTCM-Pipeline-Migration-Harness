@@ -127,7 +127,7 @@ async def _stream_reasoning(pipeline: str, stop_event: asyncio.Event, run_starte
                                 message=plan,
                                 step=step,
                                 pipeline=pipeline,
-                                code=code[:600] if code else "",
+                                code=code,
                             )
             except Exception:
                 pass

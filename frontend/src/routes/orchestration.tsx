@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell, Badge } from "@/components/AppShell";
 import { useEffect, useLayoutEffect, useRef, useState, useMemo } from "react";
+import { TOKEN_COLORS, tokenizeLine } from "@/lib/highlight";
 import {
   Play, Pause, Trash2, Cpu, List, ChevronDown, ChevronRight,
   Brain, Zap, CheckCircle2, XCircle, AlertTriangle, Clock,
@@ -87,6 +88,7 @@ interface PendingInput { situation: string; options: string[]; pipeline: string;
 
 function ReasoningBlock({ ev }: { ev: AgentEvent }) {
   const [open, setOpen] = useState(false);
+  const lines = (ev.code ?? "").split("\n");
   return (
     <div className="my-2 rounded-lg overflow-hidden border border-purple-300/30" style={{background:"oklch(0.14 0.04 290 / 0.18)"}}>
       <button
@@ -98,15 +100,25 @@ function ReasoningBlock({ ev }: { ev: AgentEvent }) {
           step {ev.step ?? "?"}
         </span>
         <span className="text-[12px] text-purple-200/80 flex-1 truncate font-medium">{ev.message}</span>
+        {ev.code && <span className="text-[10px] font-mono text-purple-400/30 shrink-0 tabular-nums">{lines.length} lines</span>}
         <span className="text-[10px] font-mono text-purple-400/40 shrink-0 ml-2 tabular-nums">{formatTs(ev.timestamp)}</span>
         {open
           ? <ChevronDown  className="h-3 w-3 text-purple-400/50 shrink-0 group-hover:text-purple-400/80 transition-colors" />
           : <ChevronRight className="h-3 w-3 text-purple-400/50 shrink-0 group-hover:text-purple-400/80 transition-colors" />}
       </button>
       {open && ev.code && (
-        <div className="border-t border-purple-400/15 bg-purple-950/20 px-4 py-3">
-          <pre className="text-[11px] font-mono text-purple-200/60 whitespace-pre-wrap leading-relaxed overflow-x-auto">
-            {ev.code}
+        <div className="border-t border-purple-400/15 overflow-auto max-h-[500px]" style={{background:"oklch(0.10 0.02 270)"}}>
+          <pre className="p-3 text-[12px] leading-[1.6] font-mono">
+            {lines.map((line, i) => (
+              <div key={i} className="flex gap-3 group/ln hover:bg-white/[0.03] rounded px-1">
+                <span className="text-purple-900/80 select-none w-8 text-right shrink-0 text-[11px] pt-px tabular-nums">{i + 1}</span>
+                <span className="flex-1 whitespace-pre">
+                  {tokenizeLine(line, "python").map((tok, j) => (
+                    <span key={j} className={TOKEN_COLORS[tok.kind] ?? "text-slate-200"}>{tok.text}</span>
+                  ))}
+                </span>
+              </div>
+            ))}
           </pre>
         </div>
       )}
@@ -198,8 +210,47 @@ function buildToolStack(events: AgentEvent[]): Record<string, ToolEntry[]> {
   return byPhase;
 }
 
+function CodeStepBlock({ ev }: { ev: AgentEvent }) {
+  const [open, setOpen] = useState(false);
+  const lines = (ev.code ?? "").split("\n");
+  return (
+    <div className="mx-2 mb-1.5 rounded border border-white/10 overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-white/5 transition-colors group"
+      >
+        <Brain className="h-3 w-3 text-purple-400/80 shrink-0" />
+        <span className="text-[10px] font-mono text-purple-400/80 uppercase shrink-0">step {ev.step ?? "?"}</span>
+        <span className="text-[11px] text-white/80 flex-1 truncate">{ev.message}</span>
+        <span className="text-[9px] font-mono text-white/40 shrink-0 tabular-nums">{lines.length}L</span>
+        {open
+          ? <ChevronDown  className="h-2.5 w-2.5 text-white/40 group-hover:text-white/60 transition-colors shrink-0"/>
+          : <ChevronRight className="h-2.5 w-2.5 text-white/40 group-hover:text-white/60 transition-colors shrink-0"/>}
+      </button>
+      {open && ev.code && (
+        <div className="border-t border-white/10 overflow-auto max-h-[420px]" style={{background:"oklch(0.14 0.02 270)"}}>
+          <pre className="p-2 text-[12px] leading-[1.6] font-mono">
+            {lines.map((line, li) => (
+              <div key={li} className="flex gap-2 hover:bg-white/[0.05] rounded px-1">
+                <span className="text-white/30 select-none w-6 text-right shrink-0 text-[11px] pt-px tabular-nums">{li + 1}</span>
+                <span className="flex-1 whitespace-pre">
+                  {tokenizeLine(line, "python").map((tok, j) => (
+                    <span key={j} className={TOKEN_COLORS[tok.kind] ?? "text-slate-200"}>{tok.text}</span>
+                  ))}
+                </span>
+              </div>
+            ))}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ToolStackPanel({ events }: { events: AgentEvent[] }) {
   const stack     = useMemo(() => buildToolStack(events), [events]);
+  const codeSteps = useMemo(() => events.filter(e => e.type === "reasoning" && e.code), [events]);
+  const [tab, setTab]       = useState<"tools" | "gencode">("tools");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const toggle    = (p: string) => setCollapsed(c => ({ ...c, [p]: !c[p] }));
   const totalTools = Object.values(stack).reduce((n, arr) => n + arr.length, 0);
@@ -207,77 +258,100 @@ function ToolStackPanel({ events }: { events: AgentEvent[] }) {
 
   return (
     <div className="flex flex-col h-full" style={{background:"oklch(0.11 0.015 260)"}}>
-      <div className="px-4 py-3.5 border-b border-white/8 shrink-0">
-        <div className="flex items-center gap-2">
-          <Layers className="h-3.5 w-3.5 text-white/40" />
-          <span className="text-[11px] font-mono uppercase tracking-widest text-white/50">Tool Stack</span>
-          <span className="ml-auto text-[10px] font-mono text-white/25 tabular-nums">{totalTools} calls</span>
-        </div>
+      <div className="px-3 py-2 border-b border-white/15 shrink-0 flex items-center gap-1">
+        <button
+          onClick={() => setTab("tools")}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-mono uppercase tracking-widest font-semibold transition-colors ${tab === "tools" ? "bg-white/15 text-white" : "text-white/55 hover:text-white/80"}`}
+        >
+          <Layers className="h-3 w-3" />tools
+          <span className="tabular-nums ml-1 opacity-70">{totalTools}</span>
+        </button>
+        <button
+          onClick={() => setTab("gencode")}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-mono uppercase tracking-widest font-semibold transition-colors ${tab === "gencode" ? "bg-white/15 text-white" : "text-white/55 hover:text-white/80"}`}
+        >
+          <Terminal className="h-3 w-3" />generated code
+          <span className="tabular-nums ml-1 opacity-70">{codeSteps.length}</span>
+        </button>
       </div>
-      <div className="flex-1 overflow-y-auto py-2">
-        {totalTools === 0 ? (
-          <div className="flex flex-col items-center justify-center h-32 text-center px-4">
-            <Terminal className="h-6 w-6 text-white/10 mb-2" />
-            <p className="text-[11px] font-mono text-white/20">No tools fired yet</p>
-          </div>
-        ) : (
-          phases.map(phase => {
-            const entries  = stack[phase] ?? [];
-            if (entries.length === 0) return null;
-            const meta     = phase !== "OTHER" ? PHASE_META[phase as Phase] : null;
-            const isOpen   = !collapsed[phase];
-            const okCount  = entries.filter(e => e.resultEv?.ok !== false && e.resultEv).length;
-            const errCount = entries.filter(e => e.resultEv?.ok === false).length;
-            return (
-              <div key={phase} className="mb-1">
-                <button
-                  onClick={() => toggle(phase)}
-                  className="w-full flex items-center gap-2 px-4 py-2 hover:bg-white/4 transition-colors group"
-                >
-                  <span className={`flex items-center gap-1.5 ${meta?.color ?? "text-white/40"}`}>
-                    {meta?.icon ?? <Wrench className="h-3 w-3"/>}
-                    <span className="text-[10px] font-mono uppercase tracking-widest font-bold">{phase}</span>
-                  </span>
-                  <span className="text-[10px] font-mono text-white/25 ml-auto tabular-nums">{entries.length}</span>
-                  {okCount  > 0 && <span className="text-[10px] font-mono text-emerald-400/60 tabular-nums">✓{okCount}</span>}
-                  {errCount > 0 && <span className="text-[10px] font-mono text-red-400/70 tabular-nums">✗{errCount}</span>}
-                  {isOpen
-                    ? <ChevronDown  className="h-2.5 w-2.5 text-white/20 group-hover:text-white/40 transition-colors"/>
-                    : <ChevronRight className="h-2.5 w-2.5 text-white/20 group-hover:text-white/40 transition-colors"/>}
-                </button>
-                {isOpen && (
-                  <div className="mx-3 mb-2 space-y-0.5">
-                    {entries.map((entry, i) => {
-                      const tool  = entry.callEv.tool_name ?? entry.callEv.message.replace("⚙ ","");
-                      const isOk  = entry.resultEv ? entry.resultEv.ok !== false : null;
-                      const summ  = entry.resultEv?.summary ?? entry.resultEv?.message?.replace("  ↳ ","") ?? null;
-                      return (
-                        <div key={i} className={`rounded px-2.5 py-1.5 border-l-2 ${
-                          isOk === true  ? "border-l-emerald-500/50 bg-emerald-500/5" :
-                          isOk === false ? "border-l-red-500/50 bg-red-500/5" :
-                          "border-l-white/10 bg-white/3"
-                        }`}>
-                          <div className="flex items-center gap-1.5">
-                            {isOk === true  && <CheckCircle2 className="h-2.5 w-2.5 text-emerald-400/70 shrink-0"/>}
-                            {isOk === false && <XCircle      className="h-2.5 w-2.5 text-red-400/70 shrink-0"/>}
-                            {isOk === null  && <div className="h-2.5 w-2.5 shrink-0 flex items-center justify-center"><span className="h-1 w-1 rounded-full bg-white/20 pulse-dot"/></div>}
-                            <span className="text-[11px] font-mono text-white/70 font-medium flex-1 truncate">{tool}</span>
+      {tab === "tools" && (
+        <div className="flex-1 overflow-y-auto py-2">
+          {totalTools === 0 ? (
+            <div className="flex flex-col items-center justify-center h-32 text-center px-4">
+              <Layers className="h-6 w-6 text-white/10 mb-2" />
+              <p className="text-[11px] font-mono text-white/20">No tools fired yet</p>
+            </div>
+          ) : (
+            phases.map(phase => {
+              const entries  = stack[phase] ?? [];
+              if (entries.length === 0) return null;
+              const meta     = phase !== "OTHER" ? PHASE_META[phase as Phase] : null;
+              const isOpen   = !collapsed[phase];
+              const okCount  = entries.filter(e => e.resultEv?.ok !== false && e.resultEv).length;
+              const errCount = entries.filter(e => e.resultEv?.ok === false).length;
+              return (
+                <div key={phase} className="mb-1">
+                  <button
+                    onClick={() => toggle(phase)}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-white/4 transition-colors group"
+                  >
+                    <span className={`flex items-center gap-1.5 ${meta?.color ?? "text-white/70"}`} style={{filter:"brightness(1.4)"}}>
+                      {meta?.icon ?? <Wrench className="h-3 w-3"/>}
+                      <span className="text-[11px] font-mono uppercase tracking-widest font-bold">{phase}</span>
+                    </span>
+                    <span className="text-[10px] font-mono text-white/50 ml-auto tabular-nums">{entries.length}</span>
+                    {okCount  > 0 && <span className="text-[10px] font-mono text-emerald-400 tabular-nums">✓{okCount}</span>}
+                    {errCount > 0 && <span className="text-[10px] font-mono text-red-400 tabular-nums">✗{errCount}</span>}
+                    {isOpen
+                      ? <ChevronDown  className="h-2.5 w-2.5 text-white/50 group-hover:text-white/80 transition-colors"/>
+                      : <ChevronRight className="h-2.5 w-2.5 text-white/50 group-hover:text-white/80 transition-colors"/>}
+                  </button>
+                  {isOpen && (
+                    <div className="mx-2 mb-1 space-y-px">
+                      {entries.map((entry, i) => {
+                        const tool  = entry.callEv.tool_name ?? entry.callEv.message.replace("⚙ ","");
+                        const isOk  = entry.resultEv ? entry.resultEv.ok !== false : null;
+                        const summ  = entry.resultEv?.summary ?? entry.resultEv?.message?.replace("  ↳ ","") ?? null;
+                        return (
+                          <div key={i} className={`rounded px-2 py-1 border-l-2 ${
+                            isOk === true  ? "border-l-emerald-500/50 bg-emerald-500/5" :
+                            isOk === false ? "border-l-red-500/50 bg-red-500/5" :
+                            "border-l-white/10 bg-white/3"
+                          }`}>
+                            <div className="flex items-center gap-1.5">
+                              {isOk === true  && <CheckCircle2 className="h-2.5 w-2.5 text-emerald-400/70 shrink-0"/>}
+                              {isOk === false && <XCircle      className="h-2.5 w-2.5 text-red-400/70 shrink-0"/>}
+                              {isOk === null  && <div className="h-2.5 w-2.5 shrink-0 flex items-center justify-center"><span className="h-1 w-1 rounded-full bg-white/20 pulse-dot"/></div>}
+                              <span className="text-[12px] font-mono text-white font-semibold flex-1 truncate">{tool}</span>
+                            </div>
+                            {summ && (
+                              <p className={`text-[11px] font-mono mt-0.5 pl-4 leading-relaxed ${isOk === false ? "text-red-400" : "text-white/60"}`}>
+                                {summ.length > 80 ? summ.slice(0, 80) + "…" : summ}
+                              </p>
+                            )}
                           </div>
-                          {summ && (
-                            <p className={`text-[10px] font-mono mt-0.5 pl-4 leading-relaxed ${isOk === false ? "text-red-400/50" : "text-white/30"}`}>
-                              {summ.length > 80 ? summ.slice(0, 80) + "…" : summ}
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })
-        )}
-      </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+      {tab === "gencode" && (
+        <div className="flex-1 overflow-y-auto py-2">
+          {codeSteps.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-32 text-center px-4">
+              <Terminal className="h-6 w-6 text-white/10 mb-2" />
+              <p className="text-[11px] font-mono text-white/20">No code generated yet</p>
+            </div>
+          ) : (
+            codeSteps.map((ev, i) => <CodeStepBlock key={i} ev={ev} />)
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -554,7 +628,7 @@ function OrchestrationConsole() {
                     );
                   }
 
-                  if (ev.type === "reasoning") return <ReasoningBlock key={`ev-${i}`} ev={ev} />;
+                  if (ev.type === "reasoning") return null;
 
                   if (ev.type === "status" && isNarration(ev.message)) {
                     const isSuper = ev.agent === "supervisor";
@@ -618,7 +692,7 @@ function OrchestrationConsole() {
           <div className="w-px bg-border shrink-0" />
 
           {/* Right: tool stack */}
-          <div className="flex-[35] min-w-0 overflow-hidden flex flex-col" style={{background:"oklch(0.11 0.015 260)"}}>
+          <div className="flex-[22] min-w-0 overflow-hidden flex flex-col" style={{background:"oklch(0.11 0.015 260)"}}>
             <ToolStackPanel events={events} />
           </div>
         </div>
