@@ -1,35 +1,57 @@
 ---
 name: migration_flow
 description: >
-  Phase order and tool map for the Hive → MWAA + Iceberg migration.
-  Defines structure only — read the phase-specific skills for domain knowledge.
+  10-step end-to-end migration flow for Hive → MWAA + Iceberg.
+  Defines phase order, agent actions, human gates, and exit criteria.
 ---
 
 # Migration Flow
 
-## Phase order
+## Pipeline Steps
 
-```
-ASSESS → CONVERT → RECONCILE → DEPLOY
-```
+**1. Intake → 2. Discovery → 3. Architecture → 4. Build & PR → 5. Deploy (Non-Prod) → 6. Validation & Parallel Run → 7. Security Gate → 8. Cutover & Rollback → 9. Handover → 10. Pipeline Accepted**
 
-## What each phase does
+---
 
-**ASSESS** — understand the pipeline before touching it
-Before using any tools, call read_skill('repo_scan'), read_skill('complexity_classification'), read_skill('graph_context').
-Goal: discover HQL files, parse structure, extract lineage, score complexity, persist to graph, query blast radius and wave.
+**1. Intake**
+Auto-populate pipeline metadata from context graph. Confirm scope and assign to wave/POD.
+*Exit: Scope Lock*
 
-**CONVERT** — generate the target artifacts
-Before using any tools, call read_skill('hiveql_to_pyspark'), read_skill('dag_generation').
-Goal: convert each HQL file to PySpark, generate the Airflow DAG.
+**2. Discovery**
+Auto-ingest repos, schemas, DAGs, policies, and logs; generate discovery report. SME reviews findings and confirms business logic.
+*Exit: Discovery Accepted*
 
-**RECONCILE** — validate the conversion is correct
-Before using any tools, call read_skill('semantic_comparison'), read_skill('runtime_validation'), read_skill('risk_assessment').
-Goal: validate PySpark syntax, compare semantic structure against HQL, check runtime parity, compile confidence report.
+**3. Architecture**
+Agent recommends target architecture based on pipeline profile and skill library. Architect reviews and approves target pattern; handles exceptions.
+*Exit: Architecture Approved*
 
-**DEPLOY** — govern and package for release
-Before using any tools, call read_skill('artifact_validation'), read_skill('deployment_governance').
-Goal: validate all artifacts, run smoke tests, compute governance decision, generate CI/CD, write manifests.
+**4. Build & PR**
+Agent generates code conversion artifacts using CodeAct and creates PR. Engineers review PR and handle edge cases (UDFs, complex joins).
+*Exit: PR Approved*
+
+**5. Deploy (Non-Prod)**
+Agent generates Terraform and triggers CI/CD via Oneflow. DevOps validates infrastructure; release engineering review.
+*Exit: Non-Prod Deployed*
+
+**6. Validation & Parallel Run**
+Agent generates and executes reconciliation plan; monitors parallel run (2–4 weeks minimum). SME reviews evidence bundle and resolves discrepancies.
+*Exit: Validation Passed*
+
+**7. Security Gate**
+Agent generates security assessment package and maps Ranger to Lake Formation. Visa Cybersecurity reviews and approves.
+*Exit: Security Cleared*
+
+**8. Cutover & Rollback**
+Agent generates rollback/canary plan with checklist. Release engineering and SME approve cutover.
+*Exit: Production Live*
+
+**9. Handover**
+Agent generates handover package (docs, runbook, architecture summary). Structured KT sessions with Visa pipeline owners.
+*Exit: Handover Accepted*
+
+**10. Pipeline Accepted**
+Final evidence bundle committed to context graph. ATC (Application Technology Contact) formal sign-off.
+*Exit: Milestone Complete*
 
 ## Output
 
@@ -37,7 +59,7 @@ Goal: validate all artifacts, run smoke tests, compute governance decision, gene
 FINAL = {
     "pipeline":       pipeline,
     "outcome":        "SUCCESS" | "PARTIAL" | "HALTED" | "FAILED",
-    "summary":        "your reasoning — what you found and why you decided what you did",
+    "summary":        "reasoning — what you found and why",
     "assessment":     { ... },
     "conversion":     { ... },
     "reconciliation": { ... },
