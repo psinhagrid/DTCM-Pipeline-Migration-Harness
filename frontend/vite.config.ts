@@ -15,6 +15,8 @@ export default defineConfig({
   vite: {
     server: {
       port: 8080,
+      strictPort: false,
+      host: "localhost",
       proxy: {
         "/api":       { target: "http://localhost:8001", changeOrigin: true, rewrite: (p) => p.replace(/^\/api/, "") },
         "/stream":    { target: "http://localhost:8001", changeOrigin: true, ws: true },
