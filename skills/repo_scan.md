@@ -8,6 +8,10 @@ description: >
 
 # Repo Scan Skill
 
+> **CRITICAL**: Call `scan_repo(pipeline)` first. It returns `hql_files` — the exact filenames that exist on disk.
+> You MUST call `parse_hql(pipeline, filename)` for each name in that list and **no others**.
+> Never guess, invent, or hardcode a filename. If you did not get it from `scan_repo`, do not use it.
+
 ## File discovery
 
 1. Enumerate all `.hql` files in the pipeline directory — these are the primary source files.

@@ -171,7 +171,11 @@ async def run_migration(pipeline_name: str) -> dict:
                     "Start by calling list_skills() then read_skill('migration_flow'). "
                     "migration_flow tells you the phase order and which skills to read for each phase — "
                     "read each skill by its exact name before using any tools in that phase. "
-                    "After each phase reason about the results before proceeding to the next."
+                    "After each phase reason about the results before proceeding to the next. "
+                    "CRITICAL — ASSESS phase file rule: call scan_repo(pipeline) first and capture its result. "
+                    "The result has a key 'hql_files' containing the ACTUAL list of filenames that exist. "
+                    "Call parse_hql(pipeline, filename) for EACH filename in that hql_files list and no others. "
+                    "NEVER guess, invent, or hardcode any filename — only use what scan_repo returned."
                 ),
             },
             tools=TOOLS,
