@@ -31,15 +31,14 @@ if ! command -v brew &>/dev/null; then
 fi
 info "Homebrew $(brew --version | head -1)"
 
-# ── 3. Python 3.10+ ────────────────────────────────────────────────────────────
-step "Python 3"
-py_ok() { python3 -c "import sys; print(sys.version_info >= (3,10))" 2>/dev/null; }
-if [[ "$(py_ok)" != "True" ]]; then
-    warn "Python 3.10+ required — installing via Homebrew..."
-    brew install python
-    export PATH="$(brew --prefix python)/bin:$PATH"
+# ── 3. Python 3.12 ─────────────────────────────────────────────────────────────
+step "Python 3.12"
+if ! command -v python3.12 &>/dev/null; then
+    warn "Installing python@3.12 via Homebrew..."
+    brew install python@3.12
 fi
-PYTHON3=$(command -v python3)
+export PATH="$(brew --prefix python@3.12)/bin:$PATH"
+PYTHON3=$(command -v python3.12)
 info "$($PYTHON3 --version) at $PYTHON3"
 
 # ── 4. Node.js ─────────────────────────────────────────────────────────────────
@@ -61,11 +60,11 @@ info "Bun $(bun --version)"
 # ── 5. Python venv + pip requirements ─────────────────────────────────────────
 step "Python environment"
 VENV="$SCRIPT_DIR/venv"
-# Rebuild venv if it was created with a Python older than 3.10
+# Rebuild venv if not on Python 3.12
 if [[ -d "$VENV" ]]; then
-    VENV_OK=$("$VENV/bin/python3" -c "import sys; print(sys.version_info >= (3,10))" 2>/dev/null || echo "False")
-    if [[ "$VENV_OK" != "True" ]]; then
-        warn "Existing venv uses old Python — rebuilding..."
+    VENV_VER=$("$VENV/bin/python3" -c "import sys; print(sys.version_info[:2])" 2>/dev/null || echo "(0,0)")
+    if [[ "$VENV_VER" != "(3, 12)" ]]; then
+        warn "Existing venv is not Python 3.12 — rebuilding..."
         rm -rf "$VENV"
     fi
 fi
@@ -145,9 +144,9 @@ info ".env ready"
 # ── 9. Open 3 Terminal windows ─────────────────────────────────────────────────
 step "Launching services in separate Terminal windows"
 
-# Write a tiny launcher for each service so we don't fight quote escaping.
-LAUNCHER_DIR="$(mktemp -d)"
-trap 'rm -rf "$LAUNCHER_DIR"' EXIT
+# Write launchers to /tmp — persists long enough for Terminal.app to read them
+LAUNCHER_DIR="/tmp/dtcm_launchers"
+mkdir -p "$LAUNCHER_DIR"
 
 # Backend
 cat > "$LAUNCHER_DIR/backend.sh" <<BASH
