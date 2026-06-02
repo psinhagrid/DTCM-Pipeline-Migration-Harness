@@ -10,6 +10,7 @@ import {
 import { onReset } from "@/lib/reset-store";
 import { marked } from "marked";
 import eventsStore, { type AgentEvent } from "@/lib/events-store";
+import { getRunning, onRunningChange } from "@/lib/running-store";
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -32,6 +33,18 @@ const PHASE_META: Record<Phase, { color: string; border: string; bg: string; dot
   RECONCILE: { color:"text-amber-400",  border:"border-amber-500/40",  bg:"bg-amber-500/8",  dot:"bg-amber-400",  icon:<Activity className="h-3 w-3"/>,   label:"Reconciling Output"   },
   DEPLOY:    { color:"text-emerald-400",border:"border-emerald-500/40",bg:"bg-emerald-500/8",dot:"bg-emerald-400",icon:<Layers className="h-3 w-3"/>,      label:"Deploying to MWAA"    },
 };
+
+const STORE_PHASE_MAP: Record<string, Phase> = {
+  "assessing": "ASSESS",
+  "converting": "CONVERT",
+  "reconciling": "RECONCILE",
+  "deploying": "DEPLOY",
+};
+
+function storePhaseToEnum(phase: string): Phase | null {
+  const key = phase.toLowerCase().replace(/[^a-z]/g, "");
+  return STORE_PHASE_MAP[key] ?? null;
+}
 
 function detectPhase(toolName: string): Phase | null {
   for (const [phase, tools] of Object.entries(PHASE_TOOLS)) {
@@ -245,6 +258,8 @@ function OrchestrationConsole() {
   const [chosenMap,    setChosenMap]    = useState<Record<string, string>>({});
   const [startTime,    setStartTime]    = useState<Date | null>(null);
   const [elapsed,      setElapsed]      = useState("00:00");
+  const [runState,     setRunState]     = useState(getRunning());
+  useEffect(() => onRunningChange(setRunState), []);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
@@ -324,6 +339,7 @@ function OrchestrationConsole() {
   }, [events]);
 
   const currentPhase = useMemo((): Phase | null => {
+    // First try to detect from tool events
     for (let i = events.length - 1; i >= 0; i--) {
       const ev = events[i];
       if (ev.type === "tool_call" || ev.type === "tool_result") {
@@ -332,8 +348,10 @@ function OrchestrationConsole() {
         if (p) return p;
       }
     }
+    // Fall back to the running store phase (e.g. "Converting…" → CONVERT)
+    if (runState?.phase) return storePhaseToEnum(runState.phase);
     return null;
-  }, [events]);
+  }, [events, runState]);
 
   const isComplete = events.some(e => e.type === "complete");
 
@@ -466,11 +484,25 @@ function OrchestrationConsole() {
             {timelineItems.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground gap-3">
                 <div className="h-14 w-14 rounded-xl bg-surface-2 border border-border flex items-center justify-center">
-                  <Cpu className="h-6 w-6 text-muted-foreground/30" />
+                  <Cpu className={`h-6 w-6 ${runState ? "text-primary/60 animate-spin" : "text-muted-foreground/30"}`} />
                 </div>
                 <div>
-                  <p className="text-[14px] font-medium text-foreground/50">No events yet</p>
-                  <p className="text-[12px] text-muted-foreground/50 mt-0.5 font-mono">Run a pipeline from the Dashboard to begin</p>
+                  {runState ? (
+                    <>
+                      <p className="text-[15px] font-semibold text-foreground/70">
+                        {currentPhase ? PHASE_META[currentPhase].label : "Starting up"}
+                        <span className="animate-pulse">…</span>
+                      </p>
+                      <p className="text-[12px] text-muted-foreground/50 mt-1 font-mono">
+                        {runState.pipeline} · agent events arriving shortly
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-[14px] font-medium text-foreground/50">No events yet</p>
+                      <p className="text-[12px] text-muted-foreground/50 mt-0.5 font-mono">Run a pipeline from the Dashboard to begin</p>
+                    </>
+                  )}
                 </div>
               </div>
             ) : (
