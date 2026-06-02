@@ -118,11 +118,16 @@ info "Neo4j  →  bolt://localhost:7687  /  http://localhost:7474"
 step ".env"
 if [[ ! -f "$SCRIPT_DIR/.env" ]]; then
     cp "$SCRIPT_DIR/.env.sample" "$SCRIPT_DIR/.env"
-    warn ".env created from .env.sample — open it and replace YOUR_API_KEY_HERE with your Anthropic key, then re-run."
-    exit 0
 fi
 if grep -q "YOUR_API_KEY_HERE" "$SCRIPT_DIR/.env"; then
-    error "ANTHROPIC_API_KEY not set. Edit .env, replace YOUR_API_KEY_HERE, then re-run bash start.sh"
+    echo ""
+    echo "  You need an Anthropic API key to run this project."
+    echo "  Get one at: https://console.anthropic.com/settings/keys"
+    echo ""
+    read -r -p "  Paste your Anthropic API key: " api_key
+    [[ -z "$api_key" ]] && error "No API key entered. Re-run bash start.sh when you have one."
+    sed -i '' "s|YOUR_API_KEY_HERE|$api_key|" "$SCRIPT_DIR/.env"
+    info "API key saved to .env"
 fi
 info ".env ready"
 
