@@ -33,18 +33,14 @@ info "Homebrew $(brew --version | head -1)"
 
 # ── 3. Python 3.10+ ────────────────────────────────────────────────────────────
 step "Python 3"
-PYTHON_OK=false
-if command -v python3 &>/dev/null; then
-    PY_VER=$(python3 -c "import sys; print(sys.version_info >= (3,10))" 2>/dev/null)
-    [[ "$PY_VER" == "True" ]] && PYTHON_OK=true
-fi
-if [[ "$PYTHON_OK" == "false" ]]; then
+py_ok() { python3 -c "import sys; print(sys.version_info >= (3,10))" 2>/dev/null; }
+if [[ "$(py_ok)" != "True" ]]; then
     warn "Python 3.10+ required — installing via Homebrew..."
     brew install python
-    # Prefer the brew-installed python3 over the system one
     export PATH="$(brew --prefix python)/bin:$PATH"
 fi
-info "$(python3 --version)"
+PYTHON3=$(command -v python3)
+info "$($PYTHON3 --version) at $PYTHON3"
 
 # ── 4. Node.js ─────────────────────────────────────────────────────────────────
 step "Node.js / npm"
@@ -65,9 +61,17 @@ info "Bun $(bun --version)"
 # ── 5. Python venv + pip requirements ─────────────────────────────────────────
 step "Python environment"
 VENV="$SCRIPT_DIR/venv"
+# Rebuild venv if it was created with a Python older than 3.10
+if [[ -d "$VENV" ]]; then
+    VENV_OK=$("$VENV/bin/python3" -c "import sys; print(sys.version_info >= (3,10))" 2>/dev/null || echo "False")
+    if [[ "$VENV_OK" != "True" ]]; then
+        warn "Existing venv uses old Python — rebuilding..."
+        rm -rf "$VENV"
+    fi
+fi
 if [[ ! -d "$VENV" ]]; then
-    python3 -m venv "$VENV"
-    info "Virtualenv created at $VENV"
+    "$PYTHON3" -m venv "$VENV"
+    info "Virtualenv created"
 fi
 # shellcheck disable=SC1091
 source "$VENV/bin/activate"
