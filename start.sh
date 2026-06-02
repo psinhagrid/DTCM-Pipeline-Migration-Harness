@@ -31,7 +31,15 @@ if ! command -v brew &>/dev/null; then
 fi
 info "Homebrew $(brew --version | head -1)"
 
-# ── 3. Node.js ─────────────────────────────────────────────────────────────────
+# ── 3. Python 3 ────────────────────────────────────────────────────────────────
+step "Python 3"
+if ! command -v python3 &>/dev/null; then
+    warn "Installing Python 3 via Homebrew..."
+    brew install python
+fi
+info "$(python3 --version)"
+
+# ── 4. Node.js ─────────────────────────────────────────────────────────────────
 step "Node.js / npm"
 if ! command -v node &>/dev/null; then
     warn "Installing Node.js via Homebrew..."
