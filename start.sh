@@ -110,12 +110,13 @@ info "Neo4j  →  bolt://localhost:7687  /  http://localhost:7474"
 step ".env"
 if [[ ! -f "$SCRIPT_DIR/.env" ]]; then
     cp "$SCRIPT_DIR/.env.sample" "$SCRIPT_DIR/.env"
-    warn ".env created from .env.sample"
-    echo ""
-    echo "  Open .env and fill in your ANTHROPIC_API_KEY, then press Enter."
-    read -r -p "  Press Enter to continue (or Ctrl+C to abort): "
+    warn ".env created from .env.sample — open it and replace YOUR_API_KEY_HERE with your Anthropic key, then re-run."
+    exit 0
 fi
-info ".env loaded"
+if grep -q "YOUR_API_KEY_HERE" "$SCRIPT_DIR/.env"; then
+    error "ANTHROPIC_API_KEY not set. Edit .env, replace YOUR_API_KEY_HERE, then re-run bash start.sh"
+fi
+info ".env ready"
 
 # ── 9. Open 3 Terminal windows ─────────────────────────────────────────────────
 step "Launching services in separate Terminal windows"
