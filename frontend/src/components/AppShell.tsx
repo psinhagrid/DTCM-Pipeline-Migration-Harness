@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import {
   LayoutDashboard,
   Terminal,
@@ -11,8 +11,10 @@ import {
   Activity,
   Search,
   BookOpen,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getRunning, onRunningChange } from "@/lib/running-store";
 
 const navMain = [
   { to: "/",               label: "Executive",     icon: LayoutDashboard },
@@ -98,6 +100,36 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
+function RunningPill() {
+  const [run, setRun] = useState(getRunning());
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => onRunningChange(s => { setRun(s); if (!s) setElapsed(0); }), []);
+  useEffect(() => {
+    if (!run) return;
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - run.startedAt) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [run?.startedAt]);
+
+  if (!run) return null;
+  const mins = Math.floor(elapsed / 60);
+  const secs = elapsed % 60;
+  const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+  return (
+    <Link
+      to="/orchestration"
+      className="flex items-center gap-2 h-7 px-3 rounded-full bg-blue-50 border border-blue-200 text-[12px] font-mono text-blue-700 hover:bg-blue-100 transition shrink-0"
+    >
+      <RefreshCw className="h-3 w-3 animate-spin text-blue-500" />
+      <span className="font-semibold">{run.pipeline}</span>
+      <span className="text-blue-400">·</span>
+      <span>{run.phase}</span>
+      <span className="text-blue-400 tabular-nums">{timeStr}</span>
+    </Link>
+  );
+}
+
 function TopBar() {
   return (
     <header className="h-14 border-b border-border bg-white shadow-sm flex items-center px-5 gap-4">
@@ -105,6 +137,8 @@ function TopBar() {
         <span className="h-2 w-2 rounded-full bg-success pulse-dot" />
         <span className="text-foreground font-medium">SUPERVISOR · ONLINE</span>
       </div>
+
+      <RunningPill />
 
       <div className="ml-auto flex items-center gap-3">
         <div className="relative w-72 hidden md:block">

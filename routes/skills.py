@@ -42,9 +42,7 @@ class SkillUpdate(BaseModel):
 
 @router.put("/{agent}/{filename}")
 def update_skill(agent: str, filename: str, body: SkillUpdate):
-    """Overwrite a skill file with new content."""
+    """Create or overwrite a skill file."""
     path = _resolve(agent, filename)
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Skill not found")
     path.write_text(body.content, encoding="utf-8")
     return {"status": "saved", "agent": agent, "filename": filename}

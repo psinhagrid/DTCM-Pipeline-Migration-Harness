@@ -3,6 +3,13 @@ import { AppShell, Panel, Badge, StatusDot } from "@/components/AppShell";
 import { useEffect, useState } from "react";
 import { Play, RefreshCw, RotateCcw } from "lucide-react";
 import { triggerReset } from "@/lib/reset-store";
+import {
+  setRunning as storeSet,
+  updatePhase as storePhase,
+  clearRunning,
+  getRunning,
+  onRunningChange,
+} from "@/lib/running-store";
 
 export const Route = createFileRoute("/")({ component: Dashboard });
 
@@ -11,10 +18,14 @@ const PHASES = ["Assessing", "Converting", "Reconciling", "Deploying"];
 function Dashboard() {
   const [pipelines, setPipelines] = useState<string[]>([]);
   const [results,   setResults]   = useState<Record<string, any>>({});
-  const [running,   setRunning]   = useState<string | null>(null);
-  const [phase,     setPhase]     = useState<string>("");
   const [runningAll,  setRunningAll]  = useState(false);
   const [allProgress, setAllProgress] = useState<{ current: string; index: number; total: number } | null>(null);
+
+  // Subscribe to global running store so state survives tab switches
+  const [runState, setRunState] = useState(getRunning());
+  useEffect(() => onRunningChange(setRunState), []);
+  const running = runState?.pipeline ?? null;
+  const phase   = runState?.phase ?? "";
 
   useEffect(() => {
     fetch("/pipelines")
@@ -36,16 +47,14 @@ function Dashboard() {
   }
 
   async function runPipeline(pipeline: string) {
-    setRunning(pipeline);
-    setPhase("Starting…");
+    storeSet(pipeline, "Starting…");
     await fetch(`/run?pipeline=${encodeURIComponent(pipeline)}`, { method: "POST" });
 
     let phaseIdx = 0;
     const poll = setInterval(async () => {
-      setPhase(PHASES[Math.min(phaseIdx, PHASES.length - 1)] + "…");
+      storePhase(PHASES[Math.min(phaseIdx, PHASES.length - 1)] + "…");
       phaseIdx++;
 
-      // Pipeline is done when deployment result exists
       const dep = await fetch(`/deployment/${encodeURIComponent(pipeline)}`)
         .then((r) => r.ok ? r.json() : null).catch(() => null);
 
@@ -53,13 +62,12 @@ function Dashboard() {
         const res = await fetch(`/result/${encodeURIComponent(pipeline)}`)
           .then((r) => r.ok ? r.json() : null).catch(() => null);
         if (res) setResults((prev) => ({ ...prev, [pipeline]: res }));
-        setRunning(null);
-        setPhase("");
+        clearRunning();
         clearInterval(poll);
       }
     }, 8000);
 
-    setTimeout(() => { clearInterval(poll); setRunning(null); setPhase(""); }, 900_000);
+    setTimeout(() => { clearInterval(poll); clearRunning(); }, 900_000);
   }
 
   async function runAllInOrder() {
@@ -103,14 +111,13 @@ function Dashboard() {
 
       // Start all pipelines in this wave simultaneously
       await Promise.all(wave.map(async (p) => {
-        setRunning(p);
-        setPhase("Starting…");
+        storeSet(p, "Starting…");
         await fetch(`/run?pipeline=${encodeURIComponent(p)}`, { method: "POST" });
 
         await new Promise<void>((resolve) => {
           let phaseIdx = 0;
           const poll = setInterval(async () => {
-            setPhase(PHASES[Math.min(phaseIdx, PHASES.length - 1)] + "…");
+            storePhase(PHASES[Math.min(phaseIdx, PHASES.length - 1)] + "…");
             phaseIdx++;
             const dep = await fetch(`/deployment/${encodeURIComponent(p)}`)
               .then((r) => r.ok ? r.json() : null).catch(() => null);
@@ -118,13 +125,12 @@ function Dashboard() {
               const res = await fetch(`/result/${encodeURIComponent(p)}`)
                 .then((r) => r.ok ? r.json() : null).catch(() => null);
               if (res) setResults((prev) => ({ ...prev, [p]: res }));
-              setRunning(null);
-              setPhase("");
+              clearRunning();
               clearInterval(poll);
               resolve();
             }
           }, 8000);
-          setTimeout(() => { clearInterval(poll); setRunning(null); setPhase(""); resolve(); }, 900_000);
+          setTimeout(() => { clearInterval(poll); clearRunning(); resolve(); }, 900_000);
         });
       }));
     }
