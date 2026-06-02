@@ -31,11 +31,18 @@ if ! command -v brew &>/dev/null; then
 fi
 info "Homebrew $(brew --version | head -1)"
 
-# ── 3. Python 3 ────────────────────────────────────────────────────────────────
+# ── 3. Python 3.10+ ────────────────────────────────────────────────────────────
 step "Python 3"
-if ! command -v python3 &>/dev/null; then
-    warn "Installing Python 3 via Homebrew..."
+PYTHON_OK=false
+if command -v python3 &>/dev/null; then
+    PY_VER=$(python3 -c "import sys; print(sys.version_info >= (3,10))" 2>/dev/null)
+    [[ "$PY_VER" == "True" ]] && PYTHON_OK=true
+fi
+if [[ "$PYTHON_OK" == "false" ]]; then
+    warn "Python 3.10+ required — installing via Homebrew..."
     brew install python
+    # Prefer the brew-installed python3 over the system one
+    export PATH="$(brew --prefix python)/bin:$PATH"
 fi
 info "$(python3 --version)"
 
