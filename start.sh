@@ -76,11 +76,6 @@ fi
 source "$VENV/bin/activate"
 pip install --quiet --upgrade pip
 pip install --quiet -r "$SCRIPT_DIR/requirements.txt"
-
-if ! pip show litellm &>/dev/null; then
-    warn "Installing litellm..."
-    pip install --quiet litellm
-fi
 info "Python deps ready  (litellm $(pip show litellm | awk '/Version/{print $2}'))"
 
 # ── 6. Frontend node_modules ───────────────────────────────────────────────────
