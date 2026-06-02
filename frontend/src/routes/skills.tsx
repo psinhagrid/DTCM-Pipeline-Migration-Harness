@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/AppShell";
 import { useEffect, useState, useRef } from "react";
-import { BookOpen, Save, Cpu, FileText, Globe, Eye, Pencil, Plus, X } from "lucide-react";
+import { BookOpen, Save, Cpu, FileText, Globe, Eye, Pencil, Plus, X, Trash2 } from "lucide-react";
 import { marked } from "marked";
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -23,6 +23,14 @@ const AGENT_META: Record<string, { label: string; short: string; color: string }
   reconcile: { label: "Reconcile",      short: "RC", color: "text-amber-600 bg-amber-500/10 border-amber-500/20" },
   deploy:    { label: "Deploy",         short: "DP", color: "text-emerald-600 bg-emerald-500/10 border-emerald-500/20" },
 };
+
+const BUILTIN_SKILLS = new Set([
+  "artifact_validation.md", "complexity_classification.md", "dag_generation.md",
+  "deployment_governance.md", "graph_context.md", "hiveql_repair.md",
+  "hiveql_to_pyspark.md", "migration_flow.md", "pyspark_repair.md",
+  "repo_scan.md", "risk_assessment.md", "runtime_validation.md",
+  "semantic_comparison.md",
+]);
 
 const SKILL_DISPLAY_NAMES: Record<string, string> = {
   graph_context:          "discovery_graph_ingestion",
@@ -84,6 +92,17 @@ function SkillsEditor() {
     setCreating(false);
     await select("skills", filename);
     setMode("edit");
+  }
+
+  async function deleteSkill() {
+    if (!selected || BUILTIN_SKILLS.has(selected.filename)) return;
+    if (!confirm(`Delete "${selected.filename}"? This cannot be undone.`)) return;
+    await fetch(`/skills-api/${selected.agent}/${selected.filename}`, { method: "DELETE" });
+    const updated = await fetch("/skills-api").then(r => r.json());
+    setIndex(updated);
+    setSelected(null);
+    setContent("");
+    setOriginal("");
   }
 
   async function save() {
@@ -235,6 +254,14 @@ function SkillsEditor() {
                 {/* Cmd+S hint */}
                 {mode === "edit" && dirty && !saving && (
                   <span className="text-[11px] font-mono text-muted-foreground/50 hidden sm:block">⌘S</span>
+                )}
+
+                {/* Delete (user-created only) */}
+                {selected && !BUILTIN_SKILLS.has(selected.filename) && (
+                  <button onClick={deleteSkill}
+                    className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium text-danger/60 hover:text-danger hover:bg-danger/8 border border-transparent hover:border-danger/20 transition shrink-0">
+                    <Trash2 className="h-3 w-3" />
+                  </button>
                 )}
 
                 {/* Save button */}

@@ -10,6 +10,15 @@ SKILL_DIRS: dict[str, Path] = {
     "skills": _ROOT / "skills",
 }
 
+# Files that shipped with the repo — cannot be deleted from the UI
+_BUILTIN_SKILLS = {
+    "artifact_validation.md", "complexity_classification.md", "dag_generation.md",
+    "deployment_governance.md", "graph_context.md", "hiveql_repair.md",
+    "hiveql_to_pyspark.md", "migration_flow.md", "pyspark_repair.md",
+    "repo_scan.md", "risk_assessment.md", "runtime_validation.md",
+    "semantic_comparison.md",
+}
+
 
 @router.get("")
 def list_skills():
@@ -46,3 +55,15 @@ def update_skill(agent: str, filename: str, body: SkillUpdate):
     path = _resolve(agent, filename)
     path.write_text(body.content, encoding="utf-8")
     return {"status": "saved", "agent": agent, "filename": filename}
+
+
+@router.delete("/{agent}/{filename}")
+def delete_skill(agent: str, filename: str):
+    """Delete a user-created skill file (built-ins are protected)."""
+    path = _resolve(agent, filename)
+    if filename in _BUILTIN_SKILLS:
+        raise HTTPException(status_code=403, detail="Built-in skills cannot be deleted")
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Skill not found")
+    path.unlink()
+    return {"status": "deleted", "agent": agent, "filename": filename}

@@ -26,11 +26,11 @@ const PHASE_TOOLS: Record<string, string[]> = {
 const PHASE_ORDER = ["ASSESS","CONVERT","RECONCILE","DEPLOY"] as const;
 type Phase = typeof PHASE_ORDER[number];
 
-const PHASE_META: Record<Phase, { color: string; border: string; bg: string; dot: string; icon: React.ReactNode }> = {
-  ASSESS:    { color:"text-sky-400",    border:"border-sky-500/40",    bg:"bg-sky-500/8",    dot:"bg-sky-400",    icon:<GitBranch className="h-3 w-3"/> },
-  CONVERT:   { color:"text-violet-400", border:"border-violet-500/40", bg:"bg-violet-500/8", dot:"bg-violet-400", icon:<Zap className="h-3 w-3"/>        },
-  RECONCILE: { color:"text-amber-400",  border:"border-amber-500/40",  bg:"bg-amber-500/8",  dot:"bg-amber-400",  icon:<Activity className="h-3 w-3"/>   },
-  DEPLOY:    { color:"text-emerald-400",border:"border-emerald-500/40",bg:"bg-emerald-500/8",dot:"bg-emerald-400",icon:<Layers className="h-3 w-3"/>      },
+const PHASE_META: Record<Phase, { color: string; border: string; bg: string; dot: string; icon: React.ReactNode; label: string }> = {
+  ASSESS:    { color:"text-sky-400",    border:"border-sky-500/40",    bg:"bg-sky-500/8",    dot:"bg-sky-400",    icon:<GitBranch className="h-3 w-3"/>, label:"Assessing Pipeline"  },
+  CONVERT:   { color:"text-violet-400", border:"border-violet-500/40", bg:"bg-violet-500/8", dot:"bg-violet-400", icon:<Zap className="h-3 w-3"/>,        label:"Generating Code"      },
+  RECONCILE: { color:"text-amber-400",  border:"border-amber-500/40",  bg:"bg-amber-500/8",  dot:"bg-amber-400",  icon:<Activity className="h-3 w-3"/>,   label:"Reconciling Output"   },
+  DEPLOY:    { color:"text-emerald-400",border:"border-emerald-500/40",bg:"bg-emerald-500/8",dot:"bg-emerald-400",icon:<Layers className="h-3 w-3"/>,      label:"Deploying to MWAA"    },
 };
 
 function detectPhase(toolName: string): Phase | null {
@@ -167,6 +167,74 @@ function DelegationDivider({ ev }: { ev: AgentEvent }) {
 }
 
 
+function PhaseBar({ currentPhase, completedPhases, isComplete }: {
+  currentPhase: Phase | null;
+  completedPhases: Set<Phase>;
+  isComplete: boolean;
+}) {
+  if (!currentPhase && completedPhases.size === 0 && !isComplete) return null;
+  return (
+    <div className="px-5 py-3 border-b border-border bg-white flex items-center gap-0 shrink-0 overflow-x-auto">
+      {PHASE_ORDER.map((phase, i) => {
+        const meta      = PHASE_META[phase];
+        const isDone    = isComplete || completedPhases.has(phase);
+        const isCurrent = !isComplete && currentPhase === phase;
+        const isFuture  = !isDone && !isCurrent;
+        return (
+          <div key={phase} className="flex items-center">
+            {/* Step */}
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-md transition-all ${
+              isCurrent ? `${meta.bg} border ${meta.border}` : ""
+            }`}>
+              {/* Icon / status */}
+              <div className={`h-5 w-5 rounded-full flex items-center justify-center shrink-0 transition-all ${
+                isDone    ? "bg-emerald-500 text-white" :
+                isCurrent ? `${meta.bg} border ${meta.border} ${meta.color}` :
+                            "bg-surface-2 border border-border text-muted-foreground/30"
+              }`}>
+                {isDone
+                  ? <CheckCircle2 className="h-3 w-3" />
+                  : isCurrent
+                    ? <span className={`h-2 w-2 rounded-full ${meta.dot} pulse-dot`} />
+                    : <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/20" />
+                }
+              </div>
+              {/* Label */}
+              <div>
+                <div className={`text-[12px] font-medium leading-none ${
+                  isDone    ? "text-emerald-600" :
+                  isCurrent ? meta.color :
+                              "text-muted-foreground/35"
+                }`}>
+                  {isCurrent ? <>{meta.label}<span className="animate-pulse">…</span></> : meta.label}
+                </div>
+                {isCurrent && (
+                  <div className={`text-[10px] font-mono mt-0.5 ${meta.color} opacity-60`}>in progress</div>
+                )}
+                {isDone && (
+                  <div className="text-[10px] font-mono mt-0.5 text-emerald-500/60">done</div>
+                )}
+              </div>
+            </div>
+            {/* Arrow connector */}
+            {i < PHASE_ORDER.length - 1 && (
+              <ArrowRight className={`h-3.5 w-3.5 mx-1 shrink-0 ${
+                isDone ? "text-emerald-400" : "text-muted-foreground/20"
+              }`} />
+            )}
+          </div>
+        );
+      })}
+      {isComplete && (
+        <div className="ml-auto flex items-center gap-1.5 text-[11px] font-mono text-emerald-600 shrink-0">
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          Pipeline complete
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OrchestrationConsole() {
   const [events,       setEvents]       = useState<AgentEvent[]>([...eventsStore.events]);
   const [connected,    setConnected]    = useState(false);
@@ -269,6 +337,23 @@ function OrchestrationConsole() {
 
   const isComplete = events.some(e => e.type === "complete");
 
+  const completedPhases = useMemo((): Set<Phase> => {
+    const seen = new Set<Phase>();
+    for (const ev of events) {
+      if (ev.type === "tool_call" || ev.type === "tool_result") {
+        const tool = ev.tool_name ?? ev.message.replace("⚙ ", "");
+        const p = detectPhase(tool);
+        if (p) seen.add(p);
+      }
+    }
+    const result = new Set<Phase>();
+    for (const p of PHASE_ORDER) {
+      if (p === currentPhase) break;
+      if (seen.has(p)) result.add(p);
+    }
+    return result;
+  }, [events, currentPhase]);
+
   const timelineItems = useMemo(() => {
     type Item =
       | { kind: "pair"; callEv: AgentEvent; resultEv?: AgentEvent; index: number }
@@ -357,6 +442,9 @@ function OrchestrationConsole() {
             </button>
           </div>
         </div>
+
+        {/* Phase progress bar */}
+        <PhaseBar currentPhase={currentPhase} completedPhases={completedPhases} isComplete={isComplete} />
 
         {/* Agent filter bar */}
         <div className="px-5 py-2 border-b border-border bg-surface-2/40 flex items-center gap-1.5 shrink-0 overflow-x-auto">
