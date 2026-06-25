@@ -9,7 +9,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-OUTPUT_ROOT = Path(__file__).parents[3] / "output"
+OUTPUT_ROOT = Path(__file__).parents[2] / "output"
 
 
 def _ts() -> str:

@@ -13,7 +13,7 @@ load_dotenv(Path(__file__).parents[2] / ".env")
 import anthropic
 
 MODEL      = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
-_SKILLS_DIR = Path(__file__).parents[3] / "skills"
+_SKILLS_DIR = Path(__file__).parents[2] / "skills"
 
 
 def _skill_body(name: str) -> str:

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-PIPELINES_ROOT = Path(__file__).parents[3] / "pipelines"
+PIPELINES_ROOT = Path(__file__).parents[1] / "pipelines"
 
 def list_hql_files_tool(pipeline_name: str) -> dict:
     """

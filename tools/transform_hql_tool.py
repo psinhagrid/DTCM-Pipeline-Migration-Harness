@@ -1,7 +1,7 @@
 from pathlib import Path
 from .utils.conversion_engine import transform_file
 
-PIPELINES_ROOT = Path(__file__).parents[3] / "pipelines"
+PIPELINES_ROOT = Path(__file__).parents[1] / "pipelines"
 
 def transform_hql_tool(filename: str, pipeline_name: str, metadata: dict) -> dict:
     """
