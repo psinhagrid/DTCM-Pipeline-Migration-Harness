@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/AppShell";
 import { useEffect, useState, useRef } from "react";
-import { BookOpen, Save, Cpu, FileText, Globe, Eye, Pencil } from "lucide-react";
+import { BookOpen, Save, Cpu, FileText, Globe, Eye, Pencil, Plus, X, Trash2 } from "lucide-react";
 import { marked } from "marked";
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -23,6 +23,14 @@ const AGENT_META: Record<string, { label: string; short: string; color: string }
   reconcile: { label: "Reconcile",      short: "RC", color: "text-amber-600 bg-amber-500/10 border-amber-500/20" },
   deploy:    { label: "Deploy",         short: "DP", color: "text-emerald-600 bg-emerald-500/10 border-emerald-500/20" },
 };
+
+const BUILTIN_SKILLS = new Set([
+  "artifact_validation.md", "complexity_classification.md", "dag_generation.md",
+  "deployment_governance.md", "graph_context.md", "hiveql_repair.md",
+  "hiveql_to_pyspark.md", "migration_flow.md", "pyspark_repair.md",
+  "repo_scan.md", "risk_assessment.md", "runtime_validation.md",
+  "semantic_comparison.md",
+]);
 
 const SKILL_DISPLAY_NAMES: Record<string, string> = {
   graph_context:          "discovery_graph_ingestion",
@@ -48,6 +56,8 @@ function SkillsEditor() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const [mode, setMode] = useState<"edit" | "preview">("preview");
+  const [newName, setNewName] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const dirty     = content !== original;
   const lineCount = content.split("\n").length;
@@ -64,6 +74,35 @@ function SkillsEditor() {
     setSelected({ agent, filename });
     setSaved(false);
     setMode("preview");
+  }
+
+  async function createSkill() {
+    const raw = newName.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+    if (!raw) return;
+    const filename = raw.endsWith(".md") ? raw : `${raw}.md`;
+    const initialContent = `# ${raw.replace(/_/g, " ")}\n\n`;
+    await fetch(`/skills-api/skills/${filename}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: initialContent }),
+    });
+    const updated = await fetch("/skills-api").then(r => r.json());
+    setIndex(updated);
+    setNewName("");
+    setCreating(false);
+    await select("skills", filename);
+    setMode("edit");
+  }
+
+  async function deleteSkill() {
+    if (!selected || BUILTIN_SKILLS.has(selected.filename)) return;
+    if (!confirm(`Delete "${selected.filename}"? This cannot be undone.`)) return;
+    await fetch(`/skills-api/${selected.agent}/${selected.filename}`, { method: "DELETE" });
+    const updated = await fetch("/skills-api").then(r => r.json());
+    setIndex(updated);
+    setSelected(null);
+    setContent("");
+    setOriginal("");
   }
 
   async function save() {
@@ -93,13 +132,39 @@ function SkillsEditor() {
               <div className="h-7 w-7 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center">
                 <BookOpen className="h-3.5 w-3.5 text-primary" />
               </div>
-              <div>
+              <div className="flex-1 min-w-0">
                 <div className="text-[13px] font-semibold text-foreground leading-none">Skills</div>
-                <div className="text-[10px] text-muted-foreground font-mono mt-0.5">
-                  {totalCount(index)} files
-                </div>
+                <div className="text-[10px] text-muted-foreground font-mono mt-0.5">{totalCount(index)} files</div>
               </div>
+              <button
+                onClick={() => setCreating(v => !v)}
+                className="h-6 w-6 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center hover:bg-primary/20 transition shrink-0"
+                title="New skill"
+              >
+                {creating ? <X className="h-3 w-3 text-primary" /> : <Plus className="h-3 w-3 text-primary" />}
+              </button>
             </div>
+
+            {/* Inline new skill form */}
+            {creating && (
+              <div className="mt-3 flex gap-1.5">
+                <input
+                  autoFocus
+                  value={newName}
+                  onChange={e => setNewName(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") createSkill(); if (e.key === "Escape") { setCreating(false); setNewName(""); }}}
+                  placeholder="skill_name"
+                  className="flex-1 h-7 px-2 rounded border border-border bg-surface-2 text-[12px] font-mono focus:outline-none focus:border-primary/60 min-w-0"
+                />
+                <button
+                  onClick={createSkill}
+                  disabled={!newName.trim()}
+                  className="h-7 px-2.5 rounded bg-primary text-white text-[11px] font-medium disabled:opacity-40 hover:bg-primary/90 transition shrink-0"
+                >
+                  Create
+                </button>
+              </div>
+            )}
           </div>
 
           {/* File tree */}
@@ -189,6 +254,14 @@ function SkillsEditor() {
                 {/* Cmd+S hint */}
                 {mode === "edit" && dirty && !saving && (
                   <span className="text-[11px] font-mono text-muted-foreground/50 hidden sm:block">⌘S</span>
+                )}
+
+                {/* Delete (user-created only) */}
+                {selected && !BUILTIN_SKILLS.has(selected.filename) && (
+                  <button onClick={deleteSkill}
+                    className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium text-danger/60 hover:text-danger hover:bg-danger/8 border border-transparent hover:border-danger/20 transition shrink-0">
+                    <Trash2 className="h-3 w-3" />
+                  </button>
                 )}
 
                 {/* Save button */}

@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell, Badge } from "@/components/AppShell";
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { DEMO_FULL_GRAPH } from "@/lib/graph-data";
-import { Network, GitBranch, Database, ChevronRight, ListOrdered, Layers } from "lucide-react";
+import { Network, ListOrdered, Layers } from "lucide-react";
 
 export const Route = createFileRoute("/context-graph")({ component: ContextGraph });
 
@@ -97,12 +97,12 @@ function computeBlastRadius(pipelines: Pipeline[]): Map<string,number> {
 const TYPE_ORDER = ["Pipeline","Workflow","Job","Query","Table","UDF"] as const;
 
 const TYPE_COLORS: Record<string,{fill:string;stroke:string;text:string}> = {
-  Pipeline: {fill:"oklch(0.92 0.06 235)",stroke:"oklch(0.55 0.18 235)",text:"oklch(0.25 0.12 235)"},
-  Workflow: {fill:"oklch(0.94 0.04 290)",stroke:"oklch(0.55 0.14 290)",text:"oklch(0.30 0.12 290)"},
-  Job:      {fill:"oklch(0.94 0.06 80)", stroke:"oklch(0.65 0.18 80)", text:"oklch(0.30 0.12 80)"},
-  Query:    {fill:"oklch(0.93 0.05 175)",stroke:"oklch(0.55 0.16 175)",text:"oklch(0.25 0.12 175)"},
-  Table:    {fill:"oklch(0.93 0.05 145)",stroke:"oklch(0.55 0.18 145)",text:"oklch(0.25 0.12 145)"},
-  UDF:      {fill:"oklch(0.94 0.06 45)", stroke:"oklch(0.65 0.18 45)", text:"oklch(0.30 0.12 45)"},
+  Pipeline: {fill:"#2563eb", stroke:"#1d4ed8", text:"#ffffff"},
+  Workflow: {fill:"#7c3aed", stroke:"#6d28d9", text:"#ffffff"},
+  Job:      {fill:"#d97706", stroke:"#b45309", text:"#ffffff"},
+  Query:    {fill:"#0d9488", stroke:"#0f766e", text:"#ffffff"},
+  Table:    {fill:"#16a34a", stroke:"#15803d", text:"#ffffff"},
+  UDF:      {fill:"#dc2626", stroke:"#b91c1c", text:"#ffffff"},
 };
 
 const EDGE_COLORS: Record<string,string> = {
@@ -115,33 +115,28 @@ const EDGE_COLORS: Record<string,string> = {
 function FullGraphVisual({ graph }: { graph: FullGraph }) {
   const [hovered,  setHovered]  = useState<string|null>(null);
   const [selected, setSelected] = useState<FullGraphNode|null>(null);
+  const [zoom, setZoom] = useState(1);
+  const clampZoom = (z: number) => Math.min(3, Math.max(0.3, z));
 
-  const NW=130, NH=34, GAP_X=12, GAP_Y=52, ROW_GAP=18, PAD=40, MAX_PER_ROW=10;
+  const R=22, PAD=60;
+  const svgW=1300, svgH=720;
 
-  const rows: Partial<Record<string, FullGraphNode[]>> = {};
-  for (const t of TYPE_ORDER) rows[t] = graph.nodes.filter(n => n.type === t);
-
-  const svgW = Math.max(1300, MAX_PER_ROW*(NW+GAP_X)-GAP_X + PAD*2);
-
+  // Seeded scatter — consistent positions, not rigid rows
   const pos = new Map<string,{x:number;y:number}>();
-  // Row label positions for each type group
-  const typeRowY = new Map<string,number>();
-  let y = PAD;
-  for (const t of TYPE_ORDER) {
-    const group = rows[t] ?? [];
-    if (!group.length) continue;
-    typeRowY.set(t, y);
-    // Split into chunks of MAX_PER_ROW
-    for (let ci=0; ci<group.length; ci+=MAX_PER_ROW) {
-      const chunk = group.slice(ci, ci+MAX_PER_ROW);
-      const rowW = chunk.length*NW + (chunk.length-1)*GAP_X;
-      const startX = (svgW - rowW) / 2;
-      chunk.forEach((n,i) => pos.set(n.id, {x: startX + i*(NW+GAP_X) + NW/2, y: y + NH/2}));
-      y += NH + ROW_GAP;
-    }
-    y += GAP_Y - ROW_GAP;
+  const placed: {x:number;y:number}[] = [];
+  let seed = 42;
+  const rand = () => { seed = (seed*1664525 + 1013904223) & 0xffffffff; return (seed >>> 0) / 0xffffffff; };
+
+  for (const n of graph.nodes) {
+    let x=0, y=0, tries=0;
+    do {
+      x = PAD + rand() * (svgW - PAD*2);
+      y = PAD + rand() * (svgH - PAD*2);
+      tries++;
+    } while (tries < 80 && placed.some(p => Math.hypot(p.x-x, p.y-y) < R*2.8));
+    pos.set(n.id, {x, y});
+    placed.push({x, y});
   }
-  const svgH = y + PAD;
 
   const connectedIds = new Set<string>();
   if (hovered) {
@@ -155,50 +150,68 @@ function FullGraphVisual({ graph }: { graph: FullGraph }) {
   return (
     <div className="flex gap-4 items-start h-full overflow-hidden">
       <div className="flex-1 flex flex-col overflow-hidden rounded-xl border border-border bg-white shadow-sm">
-        <div className="flex items-center gap-4 px-5 py-2.5 border-b border-border flex-wrap shrink-0">
-          {TYPE_ORDER.map(t => {
-            const count = rows[t]?.length ?? 0;
-            if (!count) return null;
-            const col = TYPE_COLORS[t];
-            return (
-              <span key={t} className="inline-flex items-center gap-1.5 text-[11px] font-mono">
-                <span className="h-3 w-3 rounded-sm border inline-block" style={{background:col.fill,borderColor:col.stroke}}/>
-                <span style={{color:col.text}} className="font-semibold">{count} {t}{count>1?"s":""}</span>
-              </span>
-            );
-          })}
-          <span className="ml-auto text-[11px] font-mono text-muted-foreground/60">
-            {graph.nodes.length} nodes · {graph.edges.length} edges · hover to highlight
-          </span>
+        <div className="flex items-center gap-4 px-5 py-3 border-b border-border shrink-0">
+          <span className="text-[11px] font-mono text-muted-foreground/50 shrink-0">{graph.nodes.length} nodes · {graph.edges.length} edges</span>
+          <div className="flex items-center gap-1 ml-2 shrink-0">
+            <button onClick={() => setZoom(z => clampZoom(z+0.15))}
+              className="h-6 w-6 rounded border border-border bg-surface-2 text-[13px] font-bold text-foreground/70 hover:bg-surface-3 flex items-center justify-center">+</button>
+            <span className="text-[10px] font-mono text-muted-foreground/50 w-8 text-center tabular-nums">{Math.round(zoom*100)}%</span>
+            <button onClick={() => setZoom(z => clampZoom(z-0.15))}
+              className="h-6 w-6 rounded border border-border bg-surface-2 text-[13px] font-bold text-foreground/70 hover:bg-surface-3 flex items-center justify-center">−</button>
+            <button onClick={() => setZoom(1)}
+              className="h-6 px-2 rounded border border-border bg-surface-2 text-[10px] font-mono text-muted-foreground/60 hover:bg-surface-3 ml-1">reset</button>
+          </div>
+          <div className="ml-auto flex items-center gap-5 flex-wrap justify-end">
+            {TYPE_ORDER.map(t => {
+              const count = graph.nodes.filter(n => n.type===t).length;
+              if (!count) return null;
+              const col = TYPE_COLORS[t];
+              return (
+                <div key={t} className="flex flex-col items-center gap-1">
+                  <svg width="16" height="16"><circle cx="8" cy="8" r="7" fill={col.fill} stroke={col.stroke} strokeWidth="1.5"/></svg>
+                  <span className="text-[9px] font-mono font-semibold text-foreground/70 uppercase tracking-wide leading-none">{t}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="flex-1 overflow-auto">
-          <svg width={svgW} height={svgH} style={{display:"block"}}>
+        <div className="flex-1 overflow-auto"
+          onWheel={e => { e.preventDefault(); setZoom(z => clampZoom(z - e.deltaY * 0.001)); }}
+          style={{cursor: "grab"}}>
+          <svg width={svgW} height={svgH}
+            style={{display:"block", transform:`scale(${zoom})`, transformOrigin:"top left", transition:"transform 0.1s"}}>
             <defs>
-              <marker id="fg-arr" markerWidth="5" markerHeight="5" refX="5" refY="2.5" orient="auto">
-                <path d="M0,0 L0,5 L5,2.5 z" fill="oklch(0.60 0.04 260 / 0.6)"/>
-              </marker>
+              <marker id="arr-blue" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L0,7 L7,3.5 z" fill="#93c5fd" opacity="0.8"/></marker>
+              <marker id="arr-orange" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L0,7 L7,3.5 z" fill="#fcd34d" opacity="0.8"/></marker>
+              <marker id="arr-red" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L0,7 L7,3.5 z" fill="#fca5a5" opacity="0.8"/></marker>
+              <marker id="arr-gray" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L0,7 L7,3.5 z" fill="#94a3b8" opacity="0.7"/></marker>
             </defs>
 
-            {TYPE_ORDER.map(t => {
-              if (!(rows[t]?.length)) return null;
-              const ry = typeRowY.get(t)!;
-              return <text key={t} x={8} y={ry+NH/2+4} fontSize={9} fontFamily="monospace"
-                fill="oklch(0.50 0.04 260)" fontWeight="700"
-                style={{textTransform:"uppercase",letterSpacing:"0.1em"}}>{t}</text>;
-            })}
+
 
             {graph.edges.map((e,i) => {
               const from = pos.get(e.source); const to = pos.get(e.target);
               if (!from || !to) return null;
               const isHov = !!hovered && connectedIds.has(e.source) && connectedIds.has(e.target);
               const isDim = !!hovered && !isHov;
-              return <line key={i}
-                x1={from.x} y1={from.y} x2={to.x} y2={to.y}
-                stroke={EDGE_COLORS[e.type] ?? "oklch(0.65 0.04 260)"}
-                strokeWidth={isHov ? 1.8 : 0.7}
-                strokeOpacity={isDim ? 0.04 : isHov ? 0.9 : 0.2}
-                markerEnd="url(#fg-arr)"/>;
+              const mx=(from.x+to.x)/2, my=(from.y+to.y)/2;
+              const dx=to.x-from.x, dy=to.y-from.y, len=Math.hypot(dx,dy)||1;
+              const cx=mx-(dy/len)*len*0.15, cy=my+(dx/len)*len*0.15;
+              const isRed = e.type==="USES_UDF"||e.type==="DEPENDS_ON";
+              const isOrange = e.type==="READS"||e.type==="WRITES";
+              const isBlue = e.type==="CONTAINS"||e.type==="HAS_JOB"||e.type==="HAS_QUERY";
+              const edgeColor = isRed ? "#fca5a5" : isOrange ? "#fcd34d" : isBlue ? "#93c5fd" : "#cbd5e1";
+              const arrId = isRed ? "arr-red" : isOrange ? "arr-orange" : isBlue ? "arr-blue" : "arr-gray";
+              const dashed = isOrange || isRed;
+              return <path key={i}
+                d={`M ${from.x} ${from.y} Q ${cx} ${cy} ${to.x} ${to.y}`}
+                fill="none"
+                stroke={edgeColor}
+                strokeWidth={isHov ? 2.5 : 1.2}
+                strokeDasharray={dashed ? "6 4" : "none"}
+                strokeOpacity={isDim ? 0.04 : isHov ? 1 : 0.35}
+                markerEnd={`url(#${arrId})`}/>;
             })}
 
             {graph.nodes.map(n => {
@@ -209,22 +222,29 @@ function FullGraphVisual({ graph }: { graph: FullGraph }) {
               const isDim = !!hovered && !connectedIds.has(n.id);
               const qProps = n.properties as any;
               const rawLabel = n.type === "Query" && qProps.query_id
-                ? String(qProps.query_id).split(".").slice(1,-1).join(".") || String(qProps.query_id).split(".").pop()!
+                ? String(qProps.query_id).split(".").slice(1,-1).join(".") || n.label
                 : n.label;
-              const label = rawLabel.length > 17 ? rawLabel.slice(0,16)+"…" : rawLabel;
+              const shortLabel = rawLabel.length > 9 ? rawLabel.slice(0,8)+"…" : rawLabel;
               return (
                 <g key={n.id}
-                  transform={`translate(${p.x-NW/2},${p.y-NH/2})`}
-                  style={{cursor:"pointer", opacity: isDim ? 0.2 : 1}}
+                  transform={`translate(${p.x},${p.y})`}
+                  style={{cursor:"pointer", opacity: isDim ? 0.15 : 1}}
                   onMouseEnter={() => setHovered(n.id)}
                   onMouseLeave={() => setHovered(null)}
                   onClick={() => setSelected(isSel ? null : n)}>
-                  <rect width={NW} height={NH} rx={5}
-                    fill={col.fill} stroke={isSel ? col.text : col.stroke}
-                    strokeWidth={isSel ? 2 : isHov ? 1.5 : 0.8}/>
-                  <text x={NW/2} y={NH/2+4} textAnchor="middle" fontSize={9}
+                  <circle r={R}
+                    fill={col.fill}
+                    stroke={isSel ? col.text : isHov ? col.stroke : col.stroke}
+                    strokeWidth={isSel ? 2.5 : isHov ? 2 : 0.8}/>
+                  <text textAnchor="middle" y={4} fontSize={7}
                     fontFamily="monospace" fill={col.text}
-                    fontWeight={isSel||isHov ? "700":"500"}>{label}</text>
+                    fontWeight={isSel||isHov ? "700":"500"}>{shortLabel}</text>
+                  {(isHov || isSel) && (
+                    <text textAnchor="middle" y={R+10} fontSize={8}
+                      fontFamily="monospace" fill={col.text} fontWeight="600">
+                      {rawLabel.length > 20 ? rawLabel.slice(0,19)+"…" : rawLabel}
+                    </text>
+                  )}
                 </g>
               );
             })}
@@ -265,7 +285,7 @@ function FullGraphVisual({ graph }: { graph: FullGraph }) {
   );
 }
 
-// ── Detail helpers for Pipeline DAG ──────────────────────────────────────────
+// ── Detail helpers ────────────────────────────────────────────────────────────
 
 function Section({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
   return (
@@ -292,38 +312,8 @@ function Chip({ label, onClick, clickable }: { label:string; onClick?:()=>void; 
 // ── Main component ────────────────────────────────────────────────────────────
 
 function ContextGraph() {
-  const [tab,      setTab]      = useState<"fullgraph"|"dag"|"plan">("fullgraph");
+  const [tab,      setTab]      = useState<"fullgraph"|"plan">("fullgraph");
   const [selected, setSelected] = useState<Pipeline|null>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
-
-  const pipelines = DEMO_PIPELINES as Pipeline[];
-  const tiers     = computeTiers(pipelines);
-  const blastMap  = computeBlastRadius(pipelines);
-  const maxTier   = pipelines.length ? Math.max(...[...tiers.values()]) : 0;
-
-  const byTier: Pipeline[][] = Array.from({ length: maxTier+1 }, () => []);
-  for (const p of pipelines) byTier[tiers.get(p.name) ?? 0].push(p);
-
-  const NODE_W=180, NODE_H=68, TIER_H=120, TIER_PAD=40, GAP=28;
-  const maxTierW = Math.max(...byTier.map(t => t.length*NODE_W + (t.length-1)*GAP));
-  const svgW = Math.max(960, maxTierW + 120);
-  const cx   = svgW / 2;
-
-  const pos = new Map<string,{x:number;y:number}>();
-  byTier.forEach((tier, ti) => {
-    const totalW = tier.length*NODE_W + (tier.length-1)*GAP;
-    const startX = cx - totalW/2;
-    tier.forEach((p,pi) => {
-      pos.set(p.name, { x: startX + pi*(NODE_W+GAP) + NODE_W/2, y: TIER_PAD + ti*TIER_H + NODE_H/2 });
-    });
-  });
-  const svgH = TIER_PAD*2 + (maxTier+1)*TIER_H;
-
-  const edges: {from:string;to:string}[] = [];
-  for (const p of pipelines)
-    for (const dep of p.depends_on)
-      if (pos.has(dep)) edges.push({from:dep, to:p.name});
-
   return (
     <AppShell>
       <div className="h-full flex flex-col bg-background overflow-hidden">
@@ -340,7 +330,6 @@ function ContextGraph() {
           <div className="flex items-center gap-1 ml-6 border border-border rounded-lg p-0.5 bg-surface-2/50">
             {([
               ["fullgraph", "Full Graph",      Layers      ],
-              ["dag",       "Pipeline DAG",    GitBranch   ],
               ["plan",      "Migration Plan",  ListOrdered ],
             ] as const).map(([id, label, Icon]) => (
               <button key={id} onClick={() => setTab(id)}
@@ -353,8 +342,8 @@ function ContextGraph() {
           </div>
 
           <div className="ml-auto flex items-center gap-2">
-            <Badge tone="success">{pipelines.length} pipelines</Badge>
-            <Badge tone="neutral">{edges.length} edges</Badge>
+            <Badge tone="success">{DEMO_FULL_GRAPH.nodes.length} nodes</Badge>
+            <Badge tone="neutral">{DEMO_FULL_GRAPH.edges.length} edges</Badge>
           </div>
         </div>
 
@@ -362,122 +351,6 @@ function ContextGraph() {
         {tab === "fullgraph" && (
           <div className="flex-1 overflow-hidden p-4">
             <FullGraphVisual graph={DEMO_FULL_GRAPH}/>
-          </div>
-        )}
-
-        {/* Pipeline DAG tab */}
-        {tab === "dag" && (
-          <div className="flex-1 flex overflow-hidden">
-            <div className="flex-1 overflow-auto bg-surface-2/30 relative">
-              <div className="absolute left-0 top-0 bottom-0 w-16 pointer-events-none">
-                {byTier.map((_,ti) => (
-                  <div key={ti} className="absolute left-2 text-[11px] font-mono text-muted-foreground/60 uppercase tracking-wider"
-                    style={{top: TIER_PAD + ti*TIER_H}}>T{ti+1}</div>
-                ))}
-              </div>
-              <svg ref={svgRef} width={svgW} height={svgH} className="min-w-full" style={{marginLeft:64}}>
-                <defs>
-                  <marker id="arrow" markerWidth="8" markerHeight="8" refX="8" refY="3" orient="auto">
-                    <path d="M0,0 L0,6 L8,3 z" fill="oklch(0.60 0.012 260)"/>
-                  </marker>
-                </defs>
-                {byTier.map((_,ti) => ti > 0 && (
-                  <line key={`sep-${ti}`} x1={0} y1={TIER_PAD+ti*TIER_H-TIER_H/2}
-                    x2={svgW} y2={TIER_PAD+ti*TIER_H-TIER_H/2}
-                    stroke="oklch(0.88 0.004 260)" strokeDasharray="4 4"/>
-                ))}
-                {edges.map((e,i) => {
-                  const from=pos.get(e.from); const to=pos.get(e.to);
-                  if (!from||!to) return null;
-                  const my=(from.y+to.y)/2;
-                  const isActive = selected && (selected.name===e.from||selected.name===e.to);
-                  const dimmed   = selected && !isActive;
-                  return <path key={i}
-                    d={`M ${from.x} ${from.y+NODE_H/2} C ${from.x} ${my+20}, ${to.x} ${my-20}, ${to.x} ${to.y-NODE_H/2}`}
-                    fill="none" stroke="oklch(0.65 0.012 260)"
-                    strokeWidth={isActive?2:1} strokeOpacity={dimmed?0.15:0.55}
-                    markerEnd="url(#arrow)"/>;
-                })}
-                {pipelines.map(p => {
-                  const {x,y} = pos.get(p.name)!;
-                  const cx2 = p.complexity ?? "UNKNOWN";
-                  const isActive = selected?.name === p.name;
-                  return (
-                    <g key={p.name} transform={`translate(${x-NODE_W/2},${y-NODE_H/2})`}
-                      onClick={() => setSelected(isActive?null:p)} style={{cursor:"pointer"}}>
-                      <rect width={NODE_W} height={NODE_H} rx={6}
-                        fill={nodeBg[cx2] ?? "oklch(0.96 0.004 260)"}
-                        stroke={isActive ? (nodeBorder[cx2]??"oklch(0.55 0.012 260)") : "oklch(0.88 0.004 260)"}
-                        strokeWidth={isActive?2:1}/>
-                      <text x={NODE_W/2} y={20} textAnchor="middle" fontSize={11}
-                        fontFamily="JetBrains Mono,monospace" fill="oklch(0.25 0.015 260)" fontWeight={600}>
-                        {p.name.length>22?p.name.slice(0,21)+"…":p.name}
-                      </text>
-                      <text x={NODE_W/2} y={36} textAnchor="middle" fontSize={10}
-                        fontFamily="JetBrains Mono,monospace" fill="oklch(0.55 0.012 260)">
-                        {cx2} · {p.writes.length}w {p.reads.length}r
-                      </text>
-                      {p.udfs.length>0 && (
-                        <text x={NODE_W/2} y={50} textAnchor="middle" fontSize={9}
-                          fontFamily="JetBrains Mono,monospace" fill="oklch(0.60 0.12 280)">
-                          {p.udfs.length} UDF{p.udfs.length>1?"s":""}
-                        </text>
-                      )}
-                      {(blastMap.get(p.name)??0)>0 && (
-                        <text x={NODE_W/2} y={p.udfs.length>0?62:50} textAnchor="middle" fontSize={9}
-                          fontFamily="JetBrains Mono,monospace" fill="oklch(0.55 0.20 25)">
-                          blast: {blastMap.get(p.name)}
-                        </text>
-                      )}
-                    </g>
-                  );
-                })}
-              </svg>
-            </div>
-
-            {selected && (
-              <div className="w-80 shrink-0 border-l border-border bg-white overflow-y-auto">
-                <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-                  <span className="font-mono text-[13px] font-semibold">{selected.name}</span>
-                  <button onClick={()=>setSelected(null)} className="text-muted-foreground hover:text-foreground text-lg leading-none">×</button>
-                </div>
-                <div className="px-4 py-3 space-y-4 text-[13px]">
-                  <div className="flex items-center gap-2">
-                    <Badge tone={complexityTone[selected.complexity??""]}>{selected.complexity}</Badge>
-                    {selected.estimated_effort && <span className="text-muted-foreground">{selected.estimated_effort}</span>}
-                  </div>
-                  {selected.depends_on.length>0 && (
-                    <Section icon={<ChevronRight className="h-3.5 w-3.5 rotate-180 text-info"/>} title="Depends on">
-                      {selected.depends_on.map(d=>(
-                        <Chip key={d} label={d} clickable onClick={()=>setSelected(pipelines.find(p=>p.name===d)??null)}/>
-                      ))}
-                    </Section>
-                  )}
-                  {selected.consumed_by.length>0 && (
-                    <Section icon={<ChevronRight className="h-3.5 w-3.5 text-info"/>} title="Consumed by">
-                      {selected.consumed_by.map(d=>(
-                        <Chip key={d} label={d} clickable onClick={()=>setSelected(pipelines.find(p=>p.name===d)??null)}/>
-                      ))}
-                    </Section>
-                  )}
-                  {selected.reads.length>0 && (
-                    <Section icon={<Database className="h-3.5 w-3.5 text-muted-foreground"/>} title="Reads">
-                      {selected.reads.map(t=><Chip key={t} label={t}/>)}
-                    </Section>
-                  )}
-                  {selected.writes.length>0 && (
-                    <Section icon={<Database className="h-3.5 w-3.5 text-success"/>} title="Writes">
-                      {selected.writes.map(t=><Chip key={t} label={t}/>)}
-                    </Section>
-                  )}
-                  {selected.udfs.length>0 && (
-                    <Section icon={<GitBranch className="h-3.5 w-3.5 text-warning"/>} title="UDFs">
-                      {selected.udfs.map(u=><Chip key={u} label={u}/>)}
-                    </Section>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
         )}
 

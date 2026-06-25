@@ -9,7 +9,6 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
-.Python
 *.egg-info/
 dist/
 build/
@@ -24,15 +23,18 @@ env/
 .coverage
 htmlcov/
 
-# Generated output files (written at runtime)
+# Runtime output (generated at run time)
 output/
+logs/
 
 # Frontend
 frontend/node_modules/
-frontend/.next/
 frontend/dist/
 frontend/.cache/
-frontend/bun.lockb
+frontend/bun.lock
+frontend/bunfig.toml
+frontend/.lovable/
+frontend/wrangler.jsonc
 
 # macOS
 .DS_Store
@@ -42,7 +44,3 @@ frontend/bun.lockb
 .vscode/
 .idea/
 *.swp
-
-# Logs
-*.log
-/tmp/

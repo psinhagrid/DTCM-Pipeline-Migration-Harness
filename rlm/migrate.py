@@ -168,8 +168,8 @@ async def run_migration(pipeline_name: str) -> dict:
                 "pipeline":    pipeline_name,
                 "instruction": (
                     "Run the full migration pipeline: ASSESS → CONVERT → RECONCILE → DEPLOY. "
-                    "Start by calling list_skills() then read_skill('migration_flow'). "
-                    "migration_flow tells you the phase order and which skills to read for each phase — "
+                    "Start by calling list_skills() then read_skill('orchestrator'). "
+                    "orchestrator tells you the phase order and which skills to read for each phase — "
                     "read each skill by its exact name before using any tools in that phase. "
                     "After each phase reason about the results before proceeding to the next."
                 ),

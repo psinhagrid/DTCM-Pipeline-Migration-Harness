@@ -31,7 +31,7 @@ def list_skills() -> list:
 
 
 def read_skill(name: str) -> str:
-    """Read a skill file by name. Call list_skills() first to see what's available. Always read migration_flow first."""
+    """Read a skill file by name. Call list_skills() first to see what's available. Always read orchestrator first."""
     import json, os
     from pyodide.ffi import run_sync, to_js
     import js
