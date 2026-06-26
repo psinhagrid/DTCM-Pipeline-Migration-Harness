@@ -534,10 +534,6 @@ class ReadSkillBody(BaseModel):
 
 _SKILL_SEARCH_PATHS: list[Path] = [
     _ROOT / "skills",
-    _ROOT / "modules" / "assess_module"    / "skills",
-    _ROOT / "modules" / "convert_module"   / "skills",
-    _ROOT / "modules" / "reconcile_module" / "skills",
-    _ROOT / "modules" / "deploy_module"    / "skills",
 ]
 
 
