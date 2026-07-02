@@ -1,0 +1,16 @@
+model_list:
+  - model_name: claude-sonnet-4-6
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+router_settings:
+  routing_strategy: simple-shuffle
+  num_retries: 1
+  allowed_fails: 0
+  disable_fallbacks: true
+
+general_settings:
+  drop_params: true
+  disable_fallbacks: true
+  allowed_fails: 0

@@ -1,6 +1,6 @@
-# DTCM Migration Pipeline — Fast RLM
+# HiveQL → PySpark Migration Pipeline — Fast RLM
 
-Migrates Hadoop/Hive pipelines to AWS MWAA (Airflow) + Apache Iceberg on Spark, driven by a single fast-rlm agent loop backed by Claude Sonnet.
+Migrates Hadoop/Hive pipelines to Airflow + Spark, driven by a multi-agent fast-rlm system backed by Claude Sonnet.
 
 ---
 
@@ -10,17 +10,22 @@ Migrates Hadoop/Hive pipelines to AWS MWAA (Airflow) + Apache Iceberg on Spark, 
 Browser (port 8080)
     │  SSE stream / REST
     ▼
-FastAPI Backend (port 8001)         ← main.py
+FastAPI Backend (port 8000)         ← main.py
     │
-    ├─ /run/{pipeline}              → orchestrator.py → rlm/migrate.py
-    ├─ /stream/{pipeline}           → SSE event stream (routes/stream.py)
-    ├─ /graph, /migration-plan      → Neo4j queries   (routes/graph.py)
-    ├─ /skills                      → skill CRUD       (routes/skills.py)
-    └─ /internal/*                  → tool HTTP bridge (routes/internal.py)
+    ├─ /run                         → orchestrator.py → orchestrator agent
+    ├─ /stream/{pipeline}           → SSE event stream  (routes/stream.py)
+    ├─ /graph, /migration-plan      → Neo4j queries     (routes/graph.py)
+    ├─ /skills-api                  → skill CRUD        (routes/skills.py)
+    └─ /internal/*                  → tool HTTP bridge  (routes/internal.py)
              ▲
-             │  HTTP (tool calls)
+             │  HTTP (tool calls from Deno/Pyodide)
              │
-    fast-rlm Agent (Deno/Pyodide)   ← rlm/migrate.py
+    5 fast-rlm Agents (Deno/Pyodide)
+      orchestrator_agent  ← sequences the 4 phase agents
+      assess_agent
+      convert_agent
+      reconcile_agent
+      deploy_agent
              │
              └─ LiteLLM Proxy (port 4000)
                      │
@@ -45,38 +50,63 @@ HiveQL source files (pipelines/)
     output/{pipeline}/  (JSON manifests + PySpark files + DAG)
 ```
 
+Human approval gates between phases — the orchestrator calls `request_human_approval` before each transition. The human's decision is final.
+
 ### Module Layout
 
 ```
 Fast_RLM/
 ├── starter.py                  # Launch script (Neo4j + LiteLLM + backend + frontend)
 ├── main.py                     # FastAPI app, middleware, REST endpoints
-├── orchestrator.py             # Thin wrapper — calls run_migration(), stores results
+├── orchestrator.py             # Thin wrapper — calls run_orchestrator(), stores results
 ├── event_queue.py              # Async SSE queue + user-input mechanism
+├── litellm_config.yaml         # LiteLLM proxy: claude-sonnet-4-6 → Anthropic
 │
-├── rlm/
-│   ├── migrate.py              # fast-rlm engine config, 20 tools wired, ENV passthrough
-│   ├── tools.py                # Pyodide tool implementations (HTTP calls to /internal/*)
-│   └── litellm_config.yaml     # LiteLLM proxy: claude-sonnet-4-6 → Anthropic
-│
-├── tools/
-│   ├── scan_repo_tool.py / parse_hql_tool.py / lineage_extract_tool.py
-│   ├── classify_complexity_tool.py / neo4j_write_graph_tool.py / query_graph_tool.py
-│   ├── transform_hql_tool.py / generate_dag_tool.py / validate_pyspark_tool.py
-│   ├── analyze_file_tool.py / workflow_parity_tool.py / runtime_validation_tool.py
-│   ├── compile_report_tool.py / validate_artifacts_tool.py / run_smoke_tests_tool.py
-│   ├── compute_governance_tool.py / generate_cicd_tool.py / write_manifests_tool.py
-│   └── utils/                  # hql_utils, conversion_engine, static_analyzer, validators, etc.
+├── agents/
+│   ├── assess_agent/
+│   │   ├── migrate.py          # RLM runner: run_assess(pipeline) → dict
+│   │   ├── tools.py            # Pyodide HTTP bridge (fetch /internal/*)
+│   │   ├── tools_impl/         # Python logic: scan_repo, parse_hql, lineage_extract,
+│   │   │                       #   classify_complexity, neo4j_write, query_graph
+│   │   │   └── utils/          # hql_utils.py
+│   │   └── skills/             # repo_scan, complexity_classification, graph_context, hiveql_repair
+│   │
+│   ├── convert_agent/
+│   │   ├── migrate.py          # run_convert(pipeline, assessment) → dict
+│   │   ├── tools.py
+│   │   ├── tools_impl/         # transform_hql, validate_pyspark, generate_dag
+│   │   │   └── utils/          # conversion_engine.py, pyspark_validator.py
+│   │   └── skills/             # hiveql_to_pyspark, dag_generation, hiveql_repair, pyspark_repair
+│   │
+│   ├── reconcile_agent/
+│   │   ├── migrate.py          # run_reconcile(pipeline, assessment, conversion) → dict
+│   │   ├── tools.py
+│   │   ├── tools_impl/         # analyze_file, workflow_parity, runtime_validation, compile_report, query_graph
+│   │   │   └── utils/          # static_analyzer.py, validators.py
+│   │   └── skills/             # semantic_comparison, runtime_validation, risk_assessment
+│   │
+│   ├── deploy_agent/
+│   │   ├── migrate.py          # run_deploy(pipeline, assessment, conversion, reconciliation) → dict
+│   │   ├── tools.py
+│   │   ├── tools_impl/         # validate_artifacts, run_smoke_tests, compute_governance,
+│   │   │                       #   generate_cicd, write_manifests, query_graph
+│   │   │   └── utils/          # artifact_validator, smoke_tests, governance, cicd_generator, ...
+│   │   └── skills/             # artifact_validation, deployment_governance
+│   │
+│   └── orchestrator/
+│       ├── migrate.py          # run_orchestrator(pipeline) → dict
+│       ├── tools.py            # run_*_phase + query_graph + read_skill + request_human_approval
+│       └── skills/             # orchestrator, graph_interrelations
 │
 ├── routes/
 │   ├── stream.py               # GET /stream/{pipeline} — SSE
 │   ├── graph.py                # GET /graph, /migration-plan — Neo4j
-│   ├── skills.py               # GET/POST/DELETE /skills — markdown CRUD
-│   └── internal.py             # POST /internal/* — HTTP bridge for Deno tools
+│   ├── skills.py               # GET/PUT/DELETE /skills-api — markdown CRUD per agent
+│   └── internal.py             # POST /internal/* — HTTP bridge + phase-runner endpoints
 │
 ├── graph/client.py             # Neo4j driver: blast_radius, wave, summary queries
-├── skills/*.md              # Domain knowledge (orchestrator.md drives phase order)
-├── pipelines/*/  *.hql         # Source HiveQL files (6 example pipelines)
+├── pipelines/*/  *.hql         # Source HiveQL files
+├── output/*/                   # Generated PySpark, DAGs, JSON manifests
 └── frontend/                   # React + TanStack Router (Vite, port 8080)
 ```
 
@@ -110,20 +140,20 @@ pip install -r requirements.txt
 
 ```bash
 cp .env.sample .env
-# Fill in ANTHROPIC_API_KEY (same value goes in RLM_MODEL_API_KEY)
+# Fill in ANTHROPIC_API_KEY
 ```
 
 Required variables:
 
 | Variable | Description |
 |---|---|
-| `ANTHROPIC_API_KEY` | Anthropic API key — used by LiteLLM proxy |
+| `ANTHROPIC_API_KEY` | Anthropic API key — used by LiteLLM proxy and transform_hql directly |
 | `RLM_MODEL_API_KEY` | Same key — used by fast-rlm Deno engine to authenticate with LiteLLM |
 | `RLM_MODEL_BASE_URL` | `http://localhost:4000` — LiteLLM proxy URL |
 | `RLM_PRIMARY_MODEL` | `claude-sonnet-4-6` (default) |
 | `NEO4J_URI` | `bolt://localhost:7687` |
 | `NEO4J_USER` | `neo4j` |
-| `NEO4J_PASSWORD` | `dtcm_local` |
+| `NEO4J_PASSWORD` | your Neo4j password |
 
 ### 4. Frontend
 
@@ -137,7 +167,7 @@ cd frontend && npm install
 python starter.py
 ```
 
-Starts: **LiteLLM** → `:4000` · **Backend** → `:8001` · **Frontend** → `:8080`
+Starts: **LiteLLM** → `:4000` · **Backend** → `:8000` · **Frontend** → `:8080`
 
 ---
 
@@ -150,7 +180,7 @@ Starts: **LiteLLM** → `:4000` · **Backend** → `:8001` · **Frontend** → `
 | `/validation` | Reconciliation report — semantic similarity scores per file |
 | `/deployments` | Governance approval + smoke test results |
 | `/context-graph` | Interactive pipeline dependency graph + migration plan waves |
-| `/skills` | View, create, and delete agent skill files |
+| `/skills` | View, create, and delete agent skill files (all 5 agents) |
 | `/observability` | System metrics and run log viewer |
 
 ---
@@ -168,27 +198,28 @@ Starts: **LiteLLM** → `:4000` · **Backend** → `:8001` · **Frontend** → `
 | `/graph` | GET | Full Neo4j lineage graph |
 | `/migration-plan` | GET | Wave-ordered migration sequence |
 | `/pipelines` | GET | List source pipelines |
-| `/skills` | GET | List skill names |
+| `/skills-api` | GET | List skill files per agent |
 | `/output/{pipeline}` | GET | List generated output files |
 | `/reset` | POST | Clear in-memory results |
+| `/pending-input` | GET | Current human approval prompt |
+| `/user-input` | POST | Submit a human approval response |
 
 ---
 
-## How the Agent Works
+## How It Works
 
-The fast-rlm engine runs a single Claude Sonnet agent with 20 tools exposed via HTTP. The agent:
-
-1. Reads `orchestrator.md` skill to understand the phase sequence
-2. Reads phase-specific skills before each phase (`repo_scan`, `hiveql_to_pyspark`, etc.)
-3. Calls tools sequentially — each tool POSTs to `/internal/*` on the backend
-4. The backend executes real Python logic and returns JSON
-5. Results accumulate in `orchestrator.py` dicts, served via REST to the frontend
-
-The tool bridge: **Deno (fast-rlm) → HTTP → `/internal/*` (FastAPI) → Python modules**
+1. The **orchestrator agent** reads `orchestrator.md` to understand the phase sequence
+2. It calls `run_assess_phase` → `run_convert_phase` → `run_reconcile_phase` → `run_deploy_phase` via HTTP, with human approval gates between each
+3. Each **phase agent** is an independent RLM agent with its own tools and skills
+4. Tool calls flow: **Deno (fast-rlm) → HTTP → `/internal/*` (FastAPI) → Python in `agents/<phase>/tools_impl/`**
+5. All agents can call `query_graph` at any time to inspect Neo4j pipeline dependencies
+6. Results accumulate in `orchestrator.py` dicts, served via REST to the frontend
+7. The frontend receives live agent events via SSE on `/stream/{pipeline}`
 
 ---
 
 ## Notes
 
-- **Runtime validation** (row count, checksum, SLA) is **simulated** — no live Hive/Iceberg cluster connected. Documented in the `data_provenance` field of every reconciliation report.
+- **Runtime validation** (row count, checksum, SLA) is **simulated** — no live Hive/Iceberg cluster. Documented in the `data_provenance` field of every reconciliation report.
 - **S3 upload** and **MWAA deployment** are stubbed — generated artifacts stay on local disk under `output/`.
+- `transform_hql` calls Anthropic directly (not via LiteLLM) — both `ANTHROPIC_API_KEY` and `RLM_MODEL_API_KEY` must be set to the same value.

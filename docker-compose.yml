@@ -1,0 +1,98 @@
+name: fast-rlm
+
+services:
+
+  # ── Neo4j ────────────────────────────────────────────────────────────────────
+  neo4j:
+    image: neo4j:5-community
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-dtcm_local}
+    ports:
+      - "7474:7474"   # Browser UI
+      - "7687:7687"   # Bolt
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p ${NEO4J_PASSWORD:-dtcm_local} 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ── LiteLLM proxy ────────────────────────────────────────────────────────────
+  litellm:
+    image: fast-rlm-backend:local
+    pull_policy: never
+    command: ["litellm", "--config", "/app/litellm_config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    env_file: .env
+    ports:
+      - "4000:4000"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health/liveliness"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # ── FastAPI backend ───────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fast-rlm-backend:local
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+    env_file: .env
+    environment:
+      # Override .env values so containers talk to each other by service name
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-dtcm_local}
+      RLM_MODEL_BASE_URL: http://litellm:4000
+      # Deno/Pyodide runs inside this container — localhost:8000 reaches uvicorn directly
+      DTCM_BACKEND_URL: http://localhost:8000
+      # Print tool call events to container stdout (visible in `make logs-backend`)
+      AGENT_LOG: "true"
+    ports:
+      - "8000:8000"
+      - "8080:8080"   # frontend shares this container's network namespace
+    volumes:
+      - deno-cache:/deno-cache       # Deno/Pyodide module cache
+    networks:
+      - internal
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      litellm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/pipelines"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # ── React frontend (opt-in via --profile ui) ──────────────────────────────────
+  frontend:
+    profiles: ["ui"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    # Shares backend's network namespace so Vite's localhost:8000 proxy works
+    network_mode: "service:backend"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  neo4j-data: {}
+  neo4j-logs: {}
+  deno-cache: {}

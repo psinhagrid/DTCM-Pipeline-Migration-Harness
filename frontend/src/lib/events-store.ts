@@ -6,6 +6,7 @@ export interface AgentEvent {
   timestamp?: string;
   target?: string;
   tool_name?: string;
+  description?: string;
   summary?: string;
   ok?: boolean;
   step?: number;

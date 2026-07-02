@@ -1,0 +1,21 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Node / frontend build artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/.output/
+frontend/.tanstack/
+
+# Runtime output (bind-mounted at runtime, not baked into image)
+output/
+logs/
+
+# Local secrets & VCS
+.env
+.git/
+.gitignore

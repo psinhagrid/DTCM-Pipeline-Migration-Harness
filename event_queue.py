@@ -3,7 +3,42 @@ import os
 import anthropic
 from datetime import datetime, timezone
 
+# Broadcast: every active SSE connection gets its own queue.
+# Use subscribe()/unsubscribe() instead of event_queue directly.
+_subscribers: list[asyncio.Queue] = []
+
+# Legacy alias kept for any code that still imports event_queue directly.
 event_queue: asyncio.Queue = asyncio.Queue()
+
+
+def subscribe() -> asyncio.Queue:
+    """Register a new SSE consumer and return its dedicated queue."""
+    q: asyncio.Queue = asyncio.Queue()
+    _subscribers.append(q)
+    return q
+
+
+def unsubscribe(q: asyncio.Queue) -> None:
+    """Remove a consumer queue (called when SSE connection closes)."""
+    try:
+        _subscribers.remove(q)
+    except ValueError:
+        pass
+
+# ── Approval store (polling-based HIL) ───────────────────────────────────────
+_approval_store: dict = {}  # request_id → {"status": "pending"|"resolved", "choice": int, "chosen": str}
+
+def create_approval(request_id: str) -> None:
+    _approval_store[request_id] = {"status": "pending"}
+
+def resolve_approval(request_id: str, choice: int, chosen: str) -> bool:
+    if request_id in _approval_store and _approval_store[request_id]["status"] == "pending":
+        _approval_store[request_id] = {"status": "resolved", "choice": choice, "chosen": chosen}
+        return True
+    return False
+
+def get_approval(request_id: str) -> dict:
+    return _approval_store.get(request_id, {"status": "not_found"})
 
 # Set AGENT_LOG=true to print agent events to terminal as they happen.
 _LOG = os.getenv("AGENT_LOG", "false").lower() == "true"
@@ -89,7 +124,7 @@ async def push(
     pipeline: str = "hive_migration",
     **extra,
 ) -> None:
-    await event_queue.put({
+    event = {
         "type":      type,
         "agent":     agent,
         "message":   message,
@@ -97,7 +132,12 @@ async def push(
         "pipeline":  pipeline,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         **extra,
-    })
+    }
+    # Broadcast to every connected SSE consumer
+    for q in list(_subscribers):
+        await q.put(event)
+    # Also put on the legacy queue (consumed by nothing by default, harmless)
+    await event_queue.put(event)
 
     if _LOG:
         icon  = _ICONS.get(type, "  ·")

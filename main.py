@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from routes import stream, graph, skills as skills_router, internal as internal_router
-from event_queue import resolve_user_input, _pending_input
+from event_queue import resolve_user_input, _pending_input, push
 from orchestrator import (
     run_pipeline,
     results         as pipeline_results,
@@ -23,7 +23,7 @@ from orchestrator import (
     deployments     as pipeline_deployments,
 )
 
-app = FastAPI(title="DTCM Pipeline API")
+app = FastAPI(title="Migration Pipeline API")
 
 
 def _tool_result_summary(tool: str, data: dict) -> str | None:
@@ -63,12 +63,44 @@ def _tool_result_summary(tool: str, data: dict) -> str | None:
         "run-smoke-tests":     lambda d: f"overall={d.get('overall', '?')}  passed={d.get('passed', '?')}/{d.get('total', '?')}  score={d.get('score', '?')}",
         "compute-governance":  lambda d: f"readiness={d.get('readiness_score', '?')}  state={d.get('governance', {}).get('state', '?')}",
         "write-manifests":     lambda d: f"{d.get('file_count', '?')} files written → {d.get('output_dir', '?')}",
+        "run-assess-phase":    lambda d: f"assess complete — complexity={d.get('complexity', '?')}",
+        "run-convert-phase":   lambda d: f"convert complete — {d.get('files_converted', '?')} files",
+        "run-reconcile-phase": lambda d: f"reconcile complete — confidence={d.get('confidence_score', '?')}  risk={d.get('migration_risk', '?')}",
+        "run-deploy-phase":    lambda d: f"deploy complete — state={d.get('governance_state', '?')}",
+        "request-approval":    lambda d: "awaiting human decision…",
     }
     fn = s.get(tool)
     try:
         return fn(data) if fn else None
     except Exception:
         return None
+
+
+_TOOL_DESCRIPTIONS: dict[str, str] = {
+    "scan-repo":            "Find HQL and config files in the pipeline folder",
+    "parse-hql":            "Parse SQL structure — tables, joins, UDFs, partitions",
+    "lineage-extract":      "Build upstream/downstream lineage from parsed reads/writes",
+    "classify-complexity":  "Score migration complexity based on SQL patterns",
+    "neo4j-write":          "Persist pipeline lineage graph to Neo4j",
+    "query-graph":          "Query Neo4j for blast radius, wave order, or summary",
+    "transform-hql":        "Convert a HQL file to PySpark via Claude Sonnet",
+    "validate-pyspark":     "Syntax-check and lint the generated PySpark code",
+    "generate-dag":         "Generate an Airflow DAG for the converted pipeline",
+    "analyze-file":         "Compare HQL and PySpark semantics across 8 dimensions",
+    "workflow-parity":      "Check DAG task count matches number of PySpark files",
+    "runtime-validation":   "Simulate row-count, checksum, SLA, and replay checks",
+    "compile-report":       "Aggregate scores into a confidence report with risk rating",
+    "validate-artifacts":   "Verify all output files exist and are well-formed",
+    "run-smoke-tests":      "Run 7 structural smoke tests on the generated artifacts",
+    "compute-governance":   "Compute readiness score and APPROVED/BLOCKED decision",
+    "generate-cicd":        "Generate GitHub Actions CI/CD pipeline YAML",
+    "write-manifests":      "Write all phase results as JSON files to output/",
+    "run-assess-phase":     "Start the ASSESS agent for this pipeline",
+    "run-convert-phase":    "Start the CONVERT agent with the assessment result",
+    "run-reconcile-phase":  "Start the RECONCILE agent to validate the conversion",
+    "run-deploy-phase":     "Start the DEPLOY agent to govern and package artifacts",
+    "request-approval":     "Pause and wait for human approval before proceeding",
+}
 
 
 class ToolCallLogger(BaseHTTPMiddleware):
@@ -82,10 +114,12 @@ class ToolCallLogger(BaseHTTPMiddleware):
         from starlette.responses import Response as StarletteResponse
 
         if tool_name != "read-skill":
+            description = _TOOL_DESCRIPTIONS.get(tool_name, "")
             asyncio.create_task(push(
                 type="tool_call",
-                agent="rlm_agent",
+                agent="agent",
                 message=f"⚙ {tool_name}",
+                description=description,
                 tool_name=tool_name,
                 pipeline="",
             ))
@@ -102,7 +136,7 @@ class ToolCallLogger(BaseHTTPMiddleware):
                 if summary:
                     asyncio.create_task(push(
                         type="tool_result",
-                        agent="rlm_agent",
+                        agent="agent",
                         message=f"  ↳ {summary}",
                         tool_name=tool_name,
                         summary=summary,
@@ -161,12 +195,37 @@ async def submit_user_input(choice: int, chosen: str = ""):
         pending = eq._pending_input
         if pending and 1 <= choice <= len(pending.get("options", [])):
             chosen = pending["options"][choice - 1]
+    if eq._pending_input and "request_id" in eq._pending_input:
+        eq.resolve_approval(eq._pending_input["request_id"], choice, chosen)
     resolved = eq.resolve_user_input(choice, chosen)
+    if resolved and chosen:
+        asyncio.create_task(push(
+            type="tool_result",
+            agent="orchestrator",
+            message=f"  ↳ chosen: \"{chosen}\" (option {choice})",
+            tool_name="request-approval",
+            summary=f"chosen: \"{chosen}\" (option {choice})",
+            ok=True,
+            pipeline="",
+        ))
     return {"status": "ok" if resolved else "no_pending_input"}
+
+
+@app.get("/status")
+def get_status():
+    """Return which pipelines are currently running."""
+    from orchestrator import running as running_set
+    return {"running": list(running_set)}
 
 
 @app.post("/run")
 async def run(pipeline: str = "daily_revenue_agg"):
+    asyncio.create_task(push(
+        type="status",
+        agent="orchestrator",
+        message="⟳ Starting migration pipeline — generating code…",
+        pipeline=pipeline,
+    ))
     asyncio.create_task(run_pipeline(pipeline))
     return {"status": "started", "pipeline": pipeline}
 

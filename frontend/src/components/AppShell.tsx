@@ -3,11 +3,8 @@ import { ReactNode } from "react";
 import {
   LayoutDashboard,
   Terminal,
-  ShieldCheck,
   Network,
-  Gavel,
   Rocket,
-  ScrollText,
   Activity,
   Search,
   BookOpen,
@@ -15,18 +12,15 @@ import {
 import { cn } from "@/lib/utils";
 
 const navMain = [
-  { to: "/",               label: "Executive",     icon: LayoutDashboard },
+  { to: "/",               label: "Dashboard",     icon: LayoutDashboard },
   { to: "/orchestration",  label: "Logs",          icon: Terminal },
   { to: "/observability",  label: "Observability", icon: Activity },
-  { to: "/validation",    label: "Validation",  icon: ShieldCheck },
-  { to: "/deployments",   label: "Deployments", icon: Rocket },
-  { to: "/skills",        label: "Skills",      icon: BookOpen },
+  { to: "/deployments",    label: "Deployments",   icon: Rocket },
+  { to: "/skills",         label: "Skills",        icon: BookOpen },
 ];
 
 const navFuture = [
   { to: "/context-graph", label: "Context Graph", icon: Network },
-  { to: "/governance",    label: "Governance",    icon: Gavel },
-  { to: "/audit",         label: "Audit Logs",    icon: ScrollText },
 ];
 
 function NavItem({ to, label, icon: Icon, active }: { to: string; label: string; icon: any; active: boolean }) {
@@ -60,8 +54,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               <div className="h-2 w-2 rounded-full bg-primary pulse-dot" />
             </div>
             <div>
-              <div className="text-[15px] font-semibold tracking-tight leading-none text-foreground">DTCM Harness</div>
-              <div className="text-[12px] text-muted-foreground mt-1 font-mono uppercase tracking-wider">Migration · Control Plane</div>
+              <div className="text-[15px] font-semibold tracking-tight leading-none text-foreground">RLM Pipeline</div>
+              <div className="text-[12px] text-muted-foreground mt-1 font-mono uppercase tracking-wider">HiveQL → PySpark</div>
             </div>
           </div>
         </div>
@@ -81,10 +75,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="m-3 rounded-md border border-border bg-surface-2 p-3">
           <div className="flex items-center gap-2 text-[13px] text-muted-foreground font-mono">
             <span className="h-2 w-2 rounded-full bg-success pulse-dot" />
-            supervisor.online
+            agents · online
           </div>
           <div className="mt-1.5 text-[12px] text-muted-foreground/80 font-mono leading-relaxed">
-            cluster: us-east-1<br />build: 2026.05.22-rc3
+            orchestrator · assess · convert<br />reconcile · deploy
           </div>
         </div>
       </aside>
@@ -103,7 +97,7 @@ function TopBar() {
     <header className="h-14 border-b border-border bg-white shadow-sm flex items-center px-5 gap-4">
       <div className="flex items-center gap-2 text-[13px] font-mono text-muted-foreground">
         <span className="h-2 w-2 rounded-full bg-success pulse-dot" />
-        <span className="text-foreground font-medium">SUPERVISOR · ONLINE</span>
+        <span className="text-foreground font-medium">AGENTS · ONLINE</span>
       </div>
 
       <div className="ml-auto flex items-center gap-3">

@@ -4,19 +4,24 @@ from typing import AsyncGenerator
 from fastapi import APIRouter
 from sse_starlette.sse import EventSourceResponse
 
-from event_queue import event_queue
+from event_queue import subscribe, unsubscribe
 
 router = APIRouter()
 
 
-async def event_generator() -> AsyncGenerator[dict, None]:
-    while True:
-        event = await event_queue.get()
-        yield {"data": json.dumps(event)}
-        if event.get("type") == "complete":
-            break
-
-
 @router.get("/stream")
 async def stream():
-    return EventSourceResponse(event_generator())
+    q = subscribe()
+
+    async def generator() -> AsyncGenerator[dict, None]:
+        try:
+            while True:
+                event = await q.get()
+                yield {"data": json.dumps(event)}
+                # Only close when the orchestrator sends the final complete — not sub-agent completions
+                if event.get("type") == "complete" and event.get("agent") in ("orchestrator_agent", "orchestrator"):
+                    break
+        finally:
+            unsubscribe(q)
+
+    return EventSourceResponse(generator())

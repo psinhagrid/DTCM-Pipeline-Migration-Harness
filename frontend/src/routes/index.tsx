@@ -1,21 +1,27 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { AppShell, Panel, Badge, StatusDot } from "@/components/AppShell";
-import { useEffect, useState } from "react";
-import { Play, RefreshCw, RotateCcw } from "lucide-react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { AppShell, Panel, Badge } from "@/components/AppShell";
+import { useEffect, useRef, useState } from "react";
+import { Play, RefreshCw, RotateCcw, ArrowRight } from "lucide-react";
 import { triggerReset } from "@/lib/reset-store";
+import eventsStore from "@/lib/events-store";
 
 export const Route = createFileRoute("/")({ component: Dashboard });
 
-const PHASES = ["Assessing", "Converting", "Reconciling", "Deploying"];
-
 function Dashboard() {
-  const [pipelines, setPipelines] = useState<string[]>([]);
-  const [results,   setResults]   = useState<Record<string, any>>({});
-  const [running,   setRunning]   = useState<string | null>(null);
-  const [phase,     setPhase]     = useState<string>("");
+  const [pipelines,   setPipelines]   = useState<string[]>([]);
+  const [results,     setResults]     = useState<Record<string, any>>({});
+  const [running,     setRunning]     = useState<Set<string>>(() => {
+    try {
+      const s = sessionStorage.getItem("rlm_running");
+      return s ? new Set(JSON.parse(s)) : new Set();
+    } catch { return new Set(); }
+  });
   const [runningAll,  setRunningAll]  = useState(false);
-  const [allProgress, setAllProgress] = useState<{ current: string; index: number; total: number } | null>(null);
+  const [liveEvent,   setLiveEvent]   = useState<{ tool: string; description: string } | null>(null);
+  const [allProgress, setAllProgress] = useState<string>("");
+  const liveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Restore running state from server on mount ─────────────────────────────
   useEffect(() => {
     fetch("/pipelines")
       .then((r) => r.json())
@@ -27,47 +33,95 @@ function Dashboard() {
             .then((d) => d && setResults((prev) => ({ ...prev, [p]: d })))
         );
       });
+
+    fetch("/status")
+      .then((r) => r.json())
+      .then(({ running: r }) => {
+        setRunning(new Set(r ?? [])); // always apply — server is authoritative
+      });
+  }, []);
+
+  // ── SSE: listen for live tool calls ───────────────────────────────────────
+  useEffect(() => {
+    const es = new EventSource("/stream");
+
+    es.onmessage = (e) => {
+      let ev: any;
+      try { ev = JSON.parse(e.data); } catch { return; }
+
+      // Buffer all events so Logs page has them when user navigates there
+      if (eventsStore.events.length < 500) eventsStore.events.push(ev);
+
+      if (ev.type === "tool_call" && ev.tool_name) {
+        setLiveEvent({ tool: ev.tool_name, description: ev.description || "" });
+        if (liveTimer.current) clearTimeout(liveTimer.current);
+        liveTimer.current = setTimeout(() => setLiveEvent(null), 20_000);
+      }
+
+      if (ev.type === "complete") {
+        setLiveEvent(null);
+        if (liveTimer.current) clearTimeout(liveTimer.current);
+        // Refresh status + results
+        fetch("/status").then((r) => r.json()).then(({ running: r }) =>
+          setRunning(new Set(r ?? []))
+        );
+        setPipelines((pl) => {
+          pl.forEach((p) =>
+            fetch(`/result/${p}`).then((r) => r.ok ? r.json() : null)
+              .then((d) => d && setResults((prev) => ({ ...prev, [p]: d })))
+          );
+          return pl;
+        });
+      }
+    };
+
+    return () => { es.close(); if (liveTimer.current) clearTimeout(liveTimer.current); };
+  }, []);
+
+  // ── Persist running state to sessionStorage for instant restore on nav ───────
+  useEffect(() => {
+    sessionStorage.setItem("rlm_running", JSON.stringify([...running]));
+  }, [running]);
+
+  // ── Poll running state every 5s — always active so page nav restores state ──
+  useEffect(() => {
+    const id = setInterval(() => {
+      fetch("/status").then((r) => r.json()).then(({ running: r }) => {
+        const next = new Set<string>(r ?? []);
+        setRunning((prev) => {
+          for (const p of prev) {
+            if (!next.has(p)) {
+              fetch(`/result/${p}`).then((r) => r.ok ? r.json() : null)
+                .then((d) => d && setResults((prev2) => ({ ...prev2, [p]: d })));
+            }
+          }
+          return next;
+        });
+      });
+    }, 5_000);
+    return () => clearInterval(id);
   }, []);
 
   async function refresh() {
     await fetch("/reset", { method: "POST" });
     setResults({});
+    setRunning(new Set());
     triggerReset();
   }
 
   async function runPipeline(pipeline: string) {
-    setRunning(pipeline);
-    setPhase("Starting…");
+    // Clear previous run's events so Logs page shows "Generating code…" fresh
+    eventsStore.events.splice(0, eventsStore.events.length);
+    triggerReset();
+    setRunning((prev) => new Set([...prev, pipeline]));
     await fetch(`/run?pipeline=${encodeURIComponent(pipeline)}`, { method: "POST" });
-
-    let phaseIdx = 0;
-    const poll = setInterval(async () => {
-      setPhase(PHASES[Math.min(phaseIdx, PHASES.length - 1)] + "…");
-      phaseIdx++;
-
-      // Pipeline is done when deployment result exists
-      const dep = await fetch(`/deployment/${encodeURIComponent(pipeline)}`)
-        .then((r) => r.ok ? r.json() : null).catch(() => null);
-
-      if (dep) {
-        const res = await fetch(`/result/${encodeURIComponent(pipeline)}`)
-          .then((r) => r.ok ? r.json() : null).catch(() => null);
-        if (res) setResults((prev) => ({ ...prev, [pipeline]: res }));
-        setRunning(null);
-        setPhase("");
-        clearInterval(poll);
-      }
-    }, 8000);
-
-    setTimeout(() => { clearInterval(poll); setRunning(null); setPhase(""); }, 900_000);
   }
 
   async function runAllInOrder() {
     if (!pipelines.length || runningAll) return;
     setRunningAll(true);
 
-    // Fetch graph to compute wave order
-    let waveGroups: string[][] = [pipelines]; // fallback: all in one wave
+    let waveGroups: string[][] = [pipelines];
     try {
       const graph = await fetch("/graph").then((r) => r.json());
       const gPipelines: { name: string; depends_on: string[] }[] = graph.pipelines ?? [];
@@ -99,39 +153,15 @@ function Dashboard() {
 
     for (let wi = 0; wi < waveGroups.length; wi++) {
       const wave = waveGroups[wi];
-      setAllProgress({ current: `Wave ${wi + 1}/${waveGroups.length}: ${wave.join(", ")}`, index: wi + 1, total: waveGroups.length });
-
-      // Start all pipelines in this wave simultaneously
-      await Promise.all(wave.map(async (p) => {
-        setRunning(p);
-        setPhase("Starting…");
-        await fetch(`/run?pipeline=${encodeURIComponent(p)}`, { method: "POST" });
-
-        await new Promise<void>((resolve) => {
-          let phaseIdx = 0;
-          const poll = setInterval(async () => {
-            setPhase(PHASES[Math.min(phaseIdx, PHASES.length - 1)] + "…");
-            phaseIdx++;
-            const dep = await fetch(`/deployment/${encodeURIComponent(p)}`)
-              .then((r) => r.ok ? r.json() : null).catch(() => null);
-            if (dep) {
-              const res = await fetch(`/result/${encodeURIComponent(p)}`)
-                .then((r) => r.ok ? r.json() : null).catch(() => null);
-              if (res) setResults((prev) => ({ ...prev, [p]: res }));
-              setRunning(null);
-              setPhase("");
-              clearInterval(poll);
-              resolve();
-            }
-          }, 8000);
-          setTimeout(() => { clearInterval(poll); setRunning(null); setPhase(""); resolve(); }, 900_000);
-        });
-      }));
+      setAllProgress(`Wave ${wi + 1}/${waveGroups.length}: ${wave.join(", ")}`);
+      await Promise.all(wave.map((p) => runPipeline(p)));
     }
 
     setRunningAll(false);
-    setAllProgress(null);
+    setAllProgress("");
   }
+
+  const anyRunning = running.size > 0 || runningAll;
 
   return (
     <AppShell>
@@ -141,34 +171,51 @@ function Dashboard() {
         <div className="flex items-start justify-between">
           <div>
             <div className="text-[13px] uppercase tracking-widest text-muted-foreground font-mono">Operations Dashboard</div>
-            <h1 className="text-3xl font-semibold tracking-tight mt-2">Hadoop → MWAA Migration</h1>
-            <p className="text-[16px] text-muted-foreground mt-1">DTCM analytics estate · Multi-agent orchestration</p>
+            <h1 className="text-3xl font-semibold tracking-tight mt-2">HiveQL → PySpark Migration</h1>
+            <p className="text-[16px] text-muted-foreground mt-1">Multi-agent orchestration · {pipelines.length} pipeline{pipelines.length !== 1 ? "s" : ""} available</p>
           </div>
           <button
             onClick={refresh}
             className="inline-flex items-center gap-2 h-10 px-5 rounded-lg border border-border bg-white text-[14px] text-muted-foreground hover:text-foreground hover:bg-surface-2 transition shadow-sm"
-            title="Refresh results from server"
+            title="Clear all results"
           >
             <RotateCcw className="h-4 w-4" /> Reset
           </button>
         </div>
 
+        {/* Live activity banner */}
+        {liveEvent && (
+          <div className="flex items-center gap-3 px-5 py-3 rounded-xl border border-blue-200 bg-blue-50 text-[14px]">
+            <RefreshCw className="h-4 w-4 text-blue-500 animate-spin flex-shrink-0" />
+            <span className="font-mono font-semibold text-blue-700">{liveEvent.tool}</span>
+            {liveEvent.description && (
+              <span className="text-blue-500">— {liveEvent.description}</span>
+            )}
+            <Link
+              to="/orchestration"
+              className="ml-auto flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium"
+            >
+              Live view <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+        )}
+
         {/* Pipeline list */}
         <Panel eyebrow="Pipelines" title="Available for migration">
-          {/* Toolbar — bulk action + wave progress */}
+          {/* Toolbar */}
           <div className="flex items-center justify-between px-6 py-3 border-b border-border bg-surface-2/40">
             <span className="text-[13px] text-muted-foreground font-mono">
               {runningAll && allProgress
-                ? <><RefreshCw className="inline h-3.5 w-3.5 animate-spin mr-1.5 text-primary" />{allProgress.current}</>
+                ? <><RefreshCw className="inline h-3.5 w-3.5 animate-spin mr-1.5 text-primary" />{allProgress}</>
                 : `${pipelines.length} pipeline${pipelines.length !== 1 ? "s" : ""}`}
             </span>
             <button
               onClick={runAllInOrder}
-              disabled={!!running || runningAll}
+              disabled={anyRunning}
               className={`inline-flex items-center gap-2 h-8 px-4 rounded-md text-[13px] font-medium transition ${
                 runningAll
                   ? "bg-primary/10 text-primary border border-primary/30 cursor-not-allowed"
-                  : running
+                  : anyRunning
                   ? "bg-gray-100 text-gray-400 border border-border cursor-not-allowed"
                   : "bg-primary text-white hover:bg-primary/90"
               }`}
@@ -186,20 +233,25 @@ function Dashboard() {
           ) : (
             <ul className="divide-y divide-border">
               {pipelines.map((p) => {
-                const result = results[p];
-                const recon  = null; // loaded separately if needed
+                const isRunning = running.has(p);
+                const result    = results[p];
                 return (
                   <li key={p} className={`flex items-center gap-6 px-6 py-5 transition-colors ${
-                    running === p ? "bg-blue-50 border-l-4 border-blue-400" : "hover:bg-surface-2/50"
+                    isRunning ? "bg-blue-50 border-l-4 border-blue-400" : "hover:bg-surface-2/50"
                   }`}>
-                    {/* Name + phase */}
+                    {/* Name + status line */}
                     <div className="flex-1 min-w-0">
                       <div className="text-[16px] font-semibold tracking-tight">{p}</div>
-                      {running === p ? (
-                        <div className="flex items-center gap-2 mt-1.5">
-                          <RefreshCw className="h-3.5 w-3.5 text-blue-500 animate-spin" />
-                          <span className="text-[14px] text-blue-600 font-mono font-medium">{phase}</span>
-                          <span className="text-[13px] text-blue-400">· check Logs for live events</span>
+                      {isRunning ? (
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                          <RefreshCw className="h-3.5 w-3.5 text-blue-500 animate-spin flex-shrink-0" />
+                          {liveEvent
+                            ? <>
+                                <span className="text-[13px] text-blue-700 font-mono font-semibold">{liveEvent.tool}</span>
+                                {liveEvent.description && <span className="text-[13px] text-blue-500">— {liveEvent.description}</span>}
+                              </>
+                            : <span className="text-[13px] text-blue-600 font-mono">Initialising agent…</span>
+                          }
                         </div>
                       ) : result ? (
                         <div className="text-[14px] text-muted-foreground mt-1 font-mono">
@@ -210,9 +262,9 @@ function Dashboard() {
                       )}
                     </div>
 
-                    {/* Status badges */}
+                    {/* Status badge */}
                     <div className="flex items-center gap-2">
-                      {running === p ? (
+                      {isRunning ? (
                         <Badge tone="info">RUNNING</Badge>
                       ) : result ? (
                         <>
@@ -229,18 +281,18 @@ function Dashboard() {
                     {/* Run button */}
                     <button
                       onClick={() => runPipeline(p)}
-                      disabled={!!running}
+                      disabled={anyRunning}
                       className={`inline-flex items-center gap-2 h-10 px-5 rounded-lg text-[14px] font-medium transition ${
-                        running === p
+                        isRunning
                           ? "bg-blue-100 text-blue-600 border border-blue-300 cursor-not-allowed"
-                          : running
+                          : anyRunning
                           ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                           : "bg-primary text-white hover:bg-primary/90"
                       }`}
                     >
-                      {running === p
-                        ? <><RefreshCw className="h-4 w-4 animate-spin" /> {phase || "Running…"}</>
-                        : <><Play className="h-4 w-4" /> Run Pipeline</>
+                      {isRunning
+                        ? <><RefreshCw className="h-4 w-4 animate-spin" /> Running…</>
+                        : <><Play className="h-4 w-4" /> Run</>
                       }
                     </button>
                   </li>
@@ -250,7 +302,7 @@ function Dashboard() {
           )}
         </Panel>
 
-        {/* Quick stats if results exist */}
+        {/* Quick stats */}
         {Object.keys(results).length > 0 && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[

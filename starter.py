@@ -17,7 +17,21 @@ def run(name, cmd, cwd=None, env=None):
     print(f"[{name}] started (pid {p.pid})")
     return p
 
+def kill_ports(*ports):
+    for port in ports:
+        result = subprocess.run(["lsof", "-ti", f":{port}"], capture_output=True, text=True)
+        pids = result.stdout.strip().split()
+        for pid in pids:
+            try:
+                subprocess.run(["kill", "-9", pid], check=True)
+            except Exception:
+                pass
+    if ports:
+        print(f"[Ports] cleared {', '.join(str(p) for p in ports)}")
+        time.sleep(1)
+
 print("Starting DTCM Pipeline...\n")
+kill_ports(8000, 4000, 8080)
 
 # Start Neo4j via Homebrew services (no Docker required)
 neo4j_status = subprocess.run(
@@ -39,16 +53,16 @@ else:
 
 time.sleep(2)
 
-litellm  = run("LiteLLM",  [str(VENV_BIN / "litellm"), "--config", "rlm/litellm_config.yaml", "--port", "4000"])
+litellm  = run("LiteLLM",  [str(VENV_BIN / "litellm"), "--config", "litellm_config.yaml", "--port", "4000"])
 print("[LiteLLM] waiting 3s to be ready...")
 time.sleep(3)
 
-backend  = run("Backend",  [str(VENV_BIN / "uvicorn"), "main:app", "--reload", "--port", "8001"])
+backend  = run("Backend",  [str(VENV_BIN / "uvicorn"), "main:app", "--reload", "--port", "8000"])
 frontend = run("Frontend", ["npm", "run", "dev"], cwd=ROOT / "frontend")
 
 print("\nRunning:")
 print("  LiteLLM  → http://localhost:4000")
-print("  Backend  → http://localhost:8001")
+print("  Backend  → http://localhost:8000")
 print("  Frontend → http://localhost:8080")
 print("\nCtrl+C to stop all.\n")
 

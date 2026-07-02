@@ -7,16 +7,23 @@ router = APIRouter(prefix="/skills-api")
 _ROOT = Path(__file__).parents[1]
 
 SKILL_DIRS: dict[str, Path] = {
-    "skills": _ROOT / "skills",
+    "assess_agent":    _ROOT / "agents" / "assess_agent"    / "skills",
+    "convert_agent":   _ROOT / "agents" / "convert_agent"   / "skills",
+    "reconcile_agent": _ROOT / "agents" / "reconcile_agent" / "skills",
+    "deploy_agent":    _ROOT / "agents" / "deploy_agent"    / "skills",
+    "orchestrator":    _ROOT / "agents" / "orchestrator"    / "skills",
 }
 
 
 @router.get("")
 def list_skills():
-    d = _ROOT / "skills"
-    if d.exists():
-        return {"skills": [f.name for f in sorted(d.glob("*.md"))]}
-    return {"skills": []}
+    result = {}
+    for agent, path in SKILL_DIRS.items():
+        if path.exists():
+            result[agent] = [f.name for f in sorted(path.glob("*.md"))]
+        else:
+            result[agent] = []
+    return {"skills": result}
 
 
 def _resolve(agent: str, filename: str) -> Path:
@@ -29,7 +36,6 @@ def _resolve(agent: str, filename: str) -> Path:
 
 @router.get("/{agent}/{filename}")
 def get_skill(agent: str, filename: str):
-    """Return content of a single skill file."""
     path = _resolve(agent, filename)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Skill not found")
@@ -42,9 +48,17 @@ class SkillUpdate(BaseModel):
 
 @router.put("/{agent}/{filename}")
 def update_skill(agent: str, filename: str, body: SkillUpdate):
-    """Overwrite a skill file with new content."""
     path = _resolve(agent, filename)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Skill not found")
     path.write_text(body.content, encoding="utf-8")
     return {"status": "saved", "agent": agent, "filename": filename}
+
+
+@router.delete("/{agent}/{filename}")
+def delete_skill(agent: str, filename: str):
+    path = _resolve(agent, filename)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Skill not found")
+    path.unlink()
+    return {"status": "deleted", "agent": agent, "filename": filename}

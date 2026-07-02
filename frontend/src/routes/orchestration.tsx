@@ -46,13 +46,25 @@ function detectPhase(toolName: string): Phase | null {
 }
 
 const agentColor: Record<string, string> = {
-  supervisor: "text-agent-supervisor",
-  rlm_agent:  "text-primary",
+  supervisor:       "text-agent-supervisor",
+  rlm_agent:        "text-primary",
+  agent:            "text-primary",
+  orchestrator:     "text-violet-500",
+  assess_agent:     "text-sky-500",
+  convert_agent:    "text-amber-500",
+  reconcile_agent:  "text-orange-500",
+  deploy_agent:     "text-emerald-500",
 };
 
 const agentLabel: Record<string, string> = {
-  supervisor: "SUPERVISOR",
-  rlm_agent:  "RLM",
+  supervisor:       "ORCHESTRATOR",
+  rlm_agent:        "AGENT",
+  agent:            "AGENT",
+  orchestrator:     "ORCHESTRATOR",
+  assess_agent:     "ASSESS",
+  convert_agent:    "CONVERT",
+  reconcile_agent:  "RECONCILE",
+  deploy_agent:     "DEPLOY",
 };
 
 function isNarration(msg: string): boolean {
@@ -111,10 +123,11 @@ function ReasoningBlock({ ev }: { ev: AgentEvent }) {
 }
 
 function ToolPairCard({ callEv, resultEv }: { callEv: AgentEvent; resultEv?: AgentEvent }) {
-  const tool    = callEv.tool_name ?? callEv.message.replace("⚙ ", "");
-  const isOk    = resultEv ? resultEv.ok !== false : null;
-  const summary = resultEv?.summary ?? resultEv?.message?.replace("  ↳ ", "") ?? null;
-  const phase   = detectPhase(tool);
+  const tool        = callEv.tool_name ?? callEv.message.replace("⚙ ", "");
+  const description = callEv.description ?? null;
+  const isOk        = resultEv ? resultEv.ok !== false : null;
+  const summary     = resultEv?.summary ?? resultEv?.message?.replace("  ↳ ", "") ?? null;
+  const phase       = detectPhase(tool);
   const meta    = phase ? PHASE_META[phase] : null;
 
   const borderColor = isOk === true ? "border-l-emerald-500/70" : isOk === false ? "border-l-red-500/70" : "border-l-primary/40";
@@ -122,9 +135,9 @@ function ToolPairCard({ callEv, resultEv }: { callEv: AgentEvent; resultEv?: Age
 
   return (
     <div className={`my-1 rounded-r-lg border border-border/60 border-l-2 ${borderColor} ${bgColor} overflow-hidden`}>
-      <div className="flex items-center gap-2.5 px-3 py-2">
+      <div className="flex items-center gap-2.5 px-3 pt-2 pb-1">
         <Wrench className="h-3 w-3 text-muted-foreground/40 shrink-0" />
-        <span className="font-mono font-semibold text-[12px] text-foreground/90 flex-1">{tool}</span>
+        <span className="font-mono font-semibold text-[13px] text-foreground/90 flex-1">{tool}</span>
         {meta && (
           <span className={`text-[9px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded border ${meta.color} ${meta.border} ${meta.bg} shrink-0`}>
             {phase}
@@ -135,8 +148,14 @@ function ToolPairCard({ callEv, resultEv }: { callEv: AgentEvent; resultEv?: Age
         {isOk === false && <XCircle      className="h-3.5 w-3.5 text-red-500 shrink-0" />}
         <span className="text-[10px] font-mono text-muted-foreground/40 shrink-0 tabular-nums">{formatTs(callEv.timestamp)}</span>
       </div>
+      {description && (
+        <div className="px-3 pb-1.5 flex items-start gap-2.5">
+          <span className="w-3.5 shrink-0" />
+          <span className="text-[12px] text-muted-foreground/75 leading-snug">{description}</span>
+        </div>
+      )}
       {summary && (
-        <div className="flex items-start gap-2.5 px-3 pb-2 border-t border-border/30">
+        <div className="flex items-start gap-2.5 px-3 py-2 border-t border-border/30">
           <span className="text-[10px] font-mono text-muted-foreground/30 shrink-0 mt-0.5">↳</span>
           <span className={`text-[11px] font-mono leading-relaxed ${isOk === false ? "text-red-400/80" : "text-muted-foreground/70"}`}>
             {summary}
@@ -171,7 +190,6 @@ function OrchestrationConsole() {
   const [events,       setEvents]       = useState<AgentEvent[]>([...eventsStore.events]);
   const [connected,    setConnected]    = useState(false);
   const [paused,       setPaused]       = useState(false);
-  const [filter,       setFilter]       = useState("all");
   const [verbose,      setVerbose]      = useState(false);
   const [pendingInput, setPendingInput] = useState<PendingInput | null>(null);
   const [chosenMap,    setChosenMap]    = useState<Record<string, string>>({});
@@ -195,8 +213,7 @@ function OrchestrationConsole() {
   useEffect(() => onReset(() => {
     eventsStore.events.splice(0, eventsStore.events.length);
     setEvents([]);
-    setConnected(false);
-    setStartTime(null);
+    setStartTime(new Date());
     setElapsed("00:00");
   }), []);
 
@@ -245,10 +262,7 @@ function OrchestrationConsole() {
     await fetch(`/user-input?choice=${choice}&chosen=${encodeURIComponent(chosen)}`, { method: "POST" });
   }
 
-  const agentFilters = ["all", "rlm_agent"];
-
-  const filtered = (filter === "all" ? events : events.filter(e => e.agent === filter))
-    .filter(e => verbose || e.type !== "hook");
+  const filtered = events.filter(e => verbose || e.type !== "hook");
 
   const pipelineName = useMemo(() => {
     const d = events.find(e => e.type === "delegation");
@@ -340,6 +354,12 @@ function OrchestrationConsole() {
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
+            {connected && !isComplete && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary/8 border border-primary/20">
+                <RefreshCw className="h-3 w-3 text-primary animate-spin shrink-0" />
+                <span className="text-[11px] font-mono text-primary/80 font-medium">Generating code…</span>
+              </div>
+            )}
             <Badge tone={connected ? "success" : "neutral"}>
               {connected ? <><span className="h-1.5 w-1.5 rounded-full bg-success pulse-dot mr-1"/>LIVE</> : "IDLE"}
             </Badge>
@@ -358,16 +378,10 @@ function OrchestrationConsole() {
           </div>
         </div>
 
-        {/* Agent filter bar */}
-        <div className="px-5 py-2 border-b border-border bg-surface-2/40 flex items-center gap-1.5 shrink-0 overflow-x-auto">
-          {agentFilters.map(a => (
-            <button key={a} onClick={() => setFilter(a)}
-              className={`px-2.5 py-1 rounded border text-[11px] font-mono transition-colors whitespace-nowrap ${filter === a ? "bg-primary text-white border-primary" : "border-border bg-white text-muted-foreground hover:text-foreground hover:bg-surface-3"}`}>
-              {a === "all" ? "all agents" : (agentLabel[a] ?? a).toLowerCase()}
-            </button>
-          ))}
-          <span className="ml-auto text-[10px] font-mono text-muted-foreground/50 tabular-nums shrink-0 pl-2">{filtered.length} events</span>
-          {paused && <span className="flex items-center gap-1 text-[10px] font-mono text-warning shrink-0"><span className="h-1.5 w-1.5 rounded-full bg-warning pulse-dot"/>paused</span>}
+        {/* Event count bar */}
+        <div className="px-5 py-1.5 border-b border-border bg-surface-2/40 flex items-center shrink-0">
+          <span className="text-[10px] font-mono text-muted-foreground/50 tabular-nums">{filtered.length} events</span>
+          {paused && <span className="ml-3 flex items-center gap-1 text-[10px] font-mono text-warning shrink-0"><span className="h-1.5 w-1.5 rounded-full bg-warning pulse-dot"/>paused</span>}
         </div>
 
         {/* Main body */}
@@ -378,11 +392,22 @@ function OrchestrationConsole() {
             {timelineItems.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground gap-3">
                 <div className="h-14 w-14 rounded-xl bg-surface-2 border border-border flex items-center justify-center">
-                  <Cpu className="h-6 w-6 text-muted-foreground/30" />
+                  {connected
+                    ? <RefreshCw className="h-6 w-6 text-primary/50 animate-spin" />
+                    : <Cpu className="h-6 w-6 text-muted-foreground/30" />}
                 </div>
                 <div>
-                  <p className="text-[14px] font-medium text-foreground/50">No events yet</p>
-                  <p className="text-[12px] text-muted-foreground/50 mt-0.5 font-mono">Run a pipeline from the Dashboard to begin</p>
+                  {connected ? (
+                    <>
+                      <p className="text-[14px] font-medium text-primary/70">Generating code…</p>
+                      <p className="text-[12px] text-muted-foreground/50 mt-0.5 font-mono">Agent is working — first events will appear shortly</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-[14px] font-medium text-foreground/50">No events yet</p>
+                      <p className="text-[12px] text-muted-foreground/50 mt-0.5 font-mono">Run a pipeline from the Dashboard to begin</p>
+                    </>
+                  )}
                 </div>
               </div>
             ) : (
@@ -403,12 +428,12 @@ function OrchestrationConsole() {
                         <div className="flex items-center gap-2.5 px-4 py-2.5 bg-warning/8 border-b border-warning/20">
                           <AlertTriangle className={`h-3.5 w-3.5 shrink-0 ${isActive ? "text-warning" : "text-success"}`} />
                           <span className={`text-[10px] font-mono uppercase tracking-widest font-semibold ${isActive ? "text-warning" : "text-success"}`}>
-                            {isActive ? "supervisor · awaiting decision" : "supervisor · input received"}
+                            {isActive ? "awaiting decision" : "decision recorded"}
                           </span>
                           <span className="ml-auto text-[10px] font-mono text-muted-foreground/40 tabular-nums">{formatTs(ev.timestamp)}</span>
                         </div>
                         <div className="px-4 py-3">
-                          <p className="text-[13px] text-foreground/85 mb-3 leading-relaxed">{situation}</p>
+                          <p className="text-[13px] text-foreground/85 mb-3 leading-relaxed font-medium">{situation}</p>
                           {isActive ? (
                             <div className="space-y-1.5">
                               {opts.map((opt: string, oi: number) => (

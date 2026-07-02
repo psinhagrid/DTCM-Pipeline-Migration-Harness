@@ -57,7 +57,7 @@ class ScanRepoBody(BaseModel):
 @router.post("/scan-repo")
 async def scan_repo(body: ScanRepoBody):
     try:
-        from tools.scan_repo_tool import scan_repo_tool
+        from agents.assess_agent.tools_impl.scan_repo_tool import scan_repo_tool
         pipeline_dir = PIPELINES_ROOT / body.pipeline
         result = await asyncio.to_thread(scan_repo_tool, pipeline_dir)
         return {
@@ -79,7 +79,7 @@ class ParseHqlBody(BaseModel):
 @router.post("/parse-hql")
 async def parse_hql(body: ParseHqlBody):
     try:
-        from tools.parse_hql_tool import parse_hql_tool
+        from agents.assess_agent.tools_impl.parse_hql_tool import parse_hql_tool
         path   = PIPELINES_ROOT / body.pipeline / body.filename
         result = await asyncio.to_thread(parse_hql_tool, path)
         return _serialise(result)
@@ -99,7 +99,7 @@ class LineageExtractBody(BaseModel):
 @router.post("/lineage-extract")
 async def lineage_extract(body: LineageExtractBody):
     try:
-        from tools.lineage_extract_tool import lineage_extract_tool
+        from agents.assess_agent.tools_impl.lineage_extract_tool import lineage_extract_tool
         pipeline_dir = PIPELINES_ROOT / body.pipeline
         result = await asyncio.to_thread(
             lineage_extract_tool,
@@ -132,7 +132,7 @@ class ClassifyComplexityBody(BaseModel):
 @router.post("/classify-complexity")
 async def classify_complexity(body: ClassifyComplexityBody):
     try:
-        from tools.classify_complexity_tool import classify_complexity_tool
+        from agents.assess_agent.tools_impl.classify_complexity_tool import classify_complexity_tool
         result = await asyncio.to_thread(
             classify_complexity_tool,
             set(body.tables),
@@ -163,7 +163,7 @@ class Neo4jWriteBody(BaseModel):
 @router.post("/neo4j-write")
 async def neo4j_write(body: Neo4jWriteBody):
     try:
-        from tools.neo4j_write_graph_tool import neo4j_write_graph_tool
+        from agents.assess_agent.tools_impl.neo4j_write_graph_tool import neo4j_write_graph_tool
         result = await asyncio.to_thread(
             neo4j_write_graph_tool,
             body.pipeline,
@@ -189,7 +189,7 @@ class QueryGraphBody(BaseModel):
 @router.post("/query-graph")
 async def query_graph(body: QueryGraphBody):
     try:
-        from tools.query_graph_tool import query_graph_tool
+        from agents.assess_agent.tools_impl.query_graph_tool import query_graph_tool
         result = await asyncio.to_thread(query_graph_tool, body.pipeline, body.query)
         return _serialise(result)
     except Exception as e:
@@ -209,7 +209,7 @@ class ListHqlFilesBody(BaseModel):
 @router.post("/list-hql-files")
 async def list_hql_files(body: ListHqlFilesBody):
     try:
-        from tools.list_hql_files_tool import list_hql_files_tool
+        from agents.convert_agent.tools_impl.list_hql_files_tool import list_hql_files_tool
         result = await asyncio.to_thread(list_hql_files_tool, body.pipeline)
         return _serialise(result)
     except Exception as e:
@@ -228,7 +228,7 @@ class TransformHqlBody(BaseModel):
 @router.post("/transform-hql")
 async def transform_hql(body: TransformHqlBody):
     try:
-        from tools.transform_hql_tool import transform_hql_tool
+        from agents.convert_agent.tools_impl.transform_hql_tool import transform_hql_tool
         result = await asyncio.to_thread(
             transform_hql_tool,
             body.filename,
@@ -260,7 +260,7 @@ class GenerateDagBody(BaseModel):
 @router.post("/generate-dag")
 async def generate_dag(body: GenerateDagBody):
     try:
-        from tools.generate_dag_tool import generate_dag_tool
+        from agents.convert_agent.tools_impl.generate_dag_tool import generate_dag_tool
         result = await asyncio.to_thread(
             generate_dag_tool,
             body.pipeline,
@@ -292,7 +292,7 @@ class ValidatePysparkBody(BaseModel):
 @router.post("/validate-pyspark")
 async def validate_pyspark(body: ValidatePysparkBody):
     try:
-        from tools.validate_pyspark_tool import validate_pyspark_tool
+        from agents.convert_agent.tools_impl.validate_pyspark_tool import validate_pyspark_tool
         result = await asyncio.to_thread(
             validate_pyspark_tool,
             body.filename,
@@ -315,7 +315,7 @@ class AnalyzeFileBody(BaseModel):
 @router.post("/analyze-file")
 async def analyze_file(body: AnalyzeFileBody):
     try:
-        from tools.analyze_file_tool import analyze_file_tool
+        from agents.reconcile_agent.tools_impl.analyze_file_tool import analyze_file_tool
         result = await asyncio.to_thread(
             analyze_file_tool,
             body.filename,
@@ -336,7 +336,7 @@ class WorkflowParityBody(BaseModel):
 @router.post("/workflow-parity")
 async def workflow_parity(body: WorkflowParityBody):
     try:
-        from tools.workflow_parity_tool import workflow_parity_tool
+        from agents.reconcile_agent.tools_impl.workflow_parity_tool import workflow_parity_tool
         result = await asyncio.to_thread(workflow_parity_tool, body.conversion)
         return _serialise(result)
     except Exception as e:
@@ -354,7 +354,7 @@ class RuntimeValidationBody(BaseModel):
 @router.post("/runtime-validation")
 async def runtime_validation(body: RuntimeValidationBody):
     try:
-        from tools.runtime_validation_tool import runtime_validation_tool
+        from agents.reconcile_agent.tools_impl.runtime_validation_tool import runtime_validation_tool
         result = await asyncio.to_thread(
             runtime_validation_tool,
             body.pipeline,
@@ -379,7 +379,7 @@ class CompileReportBody(BaseModel):
 @router.post("/compile-report")
 async def compile_report(body: CompileReportBody):
     try:
-        from tools.compile_report_tool import compile_report_tool
+        from agents.reconcile_agent.tools_impl.compile_report_tool import compile_report_tool
         result = await asyncio.to_thread(
             compile_report_tool,
             body.pipeline,
@@ -407,7 +407,7 @@ class ValidateArtifactsBody(BaseModel):
 @router.post("/validate-artifacts")
 async def validate_artifacts(body: ValidateArtifactsBody):
     try:
-        from tools.validate_artifacts_tool import validate_artifacts_tool
+        from agents.deploy_agent.tools_impl.validate_artifacts_tool import validate_artifacts_tool
         result = await asyncio.to_thread(
             validate_artifacts_tool,
             body.conversion,
@@ -430,7 +430,7 @@ class GenerateCicdBody(BaseModel):
 @router.post("/generate-cicd")
 async def generate_cicd(body: GenerateCicdBody):
     try:
-        from tools.generate_cicd_tool import generate_cicd_tool
+        from agents.deploy_agent.tools_impl.generate_cicd_tool import generate_cicd_tool
         result = await asyncio.to_thread(
             generate_cicd_tool,
             body.pipeline,
@@ -454,7 +454,7 @@ class RunSmokeTestsBody(BaseModel):
 @router.post("/run-smoke-tests")
 async def run_smoke_tests(body: RunSmokeTestsBody):
     try:
-        from tools.run_smoke_tests_tool import run_smoke_tests_tool
+        from agents.deploy_agent.tools_impl.run_smoke_tests_tool import run_smoke_tests_tool
         result = await asyncio.to_thread(
             run_smoke_tests_tool,
             body.pipeline,
@@ -477,7 +477,7 @@ class ComputeGovernanceBody(BaseModel):
 @router.post("/compute-governance")
 async def compute_governance(body: ComputeGovernanceBody):
     try:
-        from tools.compute_governance_tool import compute_governance_tool
+        from agents.deploy_agent.tools_impl.compute_governance_tool import compute_governance_tool
         result = await asyncio.to_thread(
             compute_governance_tool,
             body.artifact_checks,
@@ -505,7 +505,7 @@ class WriteManifestsBody(BaseModel):
 @router.post("/write-manifests")
 async def write_manifests(body: WriteManifestsBody):
     try:
-        from tools.write_manifests_tool import write_manifests_tool
+        from agents.deploy_agent.tools_impl.write_manifests_tool import write_manifests_tool
         result = await asyncio.to_thread(
             write_manifests_tool,
             body.pipeline,
@@ -533,7 +533,11 @@ class ReadSkillBody(BaseModel):
 
 
 _SKILL_SEARCH_PATHS: list[Path] = [
-    _ROOT / "skills",
+    _ROOT / "agents" / "assess_agent"    / "skills",
+    _ROOT / "agents" / "convert_agent"   / "skills",
+    _ROOT / "agents" / "reconcile_agent" / "skills",
+    _ROOT / "agents" / "deploy_agent"    / "skills",
+    _ROOT / "agents" / "orchestrator"    / "skills",
 ]
 
 
@@ -555,6 +559,68 @@ async def read_skill(body: ReadSkillBody):
         return {"error": str(e)}
 
 
+# ── POST /internal/request-approval ─────────────────────────────────────────
+# Non-blocking: pushes the SSE event and returns a request_id immediately.
+# The agent polls /internal/approval-status?request_id=... until resolved.
+
+class ApprovalBody(BaseModel):
+    phase: str
+    summary: str
+    pipeline: str = ""
+    artifacts: list = []
+    options: list = []
+
+@router.post("/request-approval")
+async def request_approval(body: ApprovalBody):
+    try:
+        import uuid
+        import event_queue as eq
+        from event_queue import create_approval, push
+
+        request_id = str(uuid.uuid4())
+        create_approval(request_id)
+
+        situation = f"[{body.phase}] {body.summary}"
+        if body.artifacts:
+            situation += f"\n\nArtifacts ready: {', '.join(body.artifacts)}"
+
+        options = body.options if body.options else ["Proceed", "Halt migration"]
+
+        eq._input_event    = asyncio.Event()
+        eq._input_response = None
+        eq._pending_input  = {
+            "situation":  situation,
+            "options":    options,
+            "pipeline":   body.pipeline,
+            "request_id": request_id,
+        }
+
+        await push(
+            type="user_input_required",
+            agent="supervisor",
+            message=situation,
+            situation=situation,
+            options=options,
+            pipeline=body.pipeline or "system",
+            request_id=request_id,
+        )
+
+        return {"request_id": request_id, "status": "pending"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ── GET /internal/approval-status ────────────────────────────────────────────
+
+@router.get("/approval-status")
+async def approval_status(request_id: str):
+    try:
+        from event_queue import get_approval
+        return get_approval(request_id)
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # ── GET /internal/list-skills ─────────────────────────────────────────────
 
 @router.get("/list-skills")
@@ -569,5 +635,71 @@ async def list_skills():
                         names.append(f.stem)
                         seen.add(f.stem)
         return {"skills": names}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ===========================================================================
+# PHASE RUNNER ENDPOINTS  (called by the orchestrator agent)
+# ===========================================================================
+
+class RunAssessPhaseBody(BaseModel):
+    pipeline: str
+
+
+@router.post("/run-assess-phase")
+async def run_assess_phase(body: RunAssessPhaseBody):
+    try:
+        from agents.assess_agent.migrate import run_assess
+        result = await run_assess(body.pipeline)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+class RunConvertPhaseBody(BaseModel):
+    pipeline:   str
+    assessment: dict
+
+
+@router.post("/run-convert-phase")
+async def run_convert_phase(body: RunConvertPhaseBody):
+    try:
+        from agents.convert_agent.migrate import run_convert
+        result = await run_convert(body.pipeline, body.assessment)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+class RunReconcilePhaseBody(BaseModel):
+    pipeline:   str
+    assessment: dict
+    conversion: dict
+
+
+@router.post("/run-reconcile-phase")
+async def run_reconcile_phase(body: RunReconcilePhaseBody):
+    try:
+        from agents.reconcile_agent.migrate import run_reconcile
+        result = await run_reconcile(body.pipeline, body.assessment, body.conversion)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+class RunDeployPhaseBody(BaseModel):
+    pipeline:       str
+    assessment:     dict
+    conversion:     dict
+    reconciliation: dict
+
+
+@router.post("/run-deploy-phase")
+async def run_deploy_phase(body: RunDeployPhaseBody):
+    try:
+        from agents.deploy_agent.migrate import run_deploy
+        result = await run_deploy(body.pipeline, body.assessment, body.conversion, body.reconciliation)
+        return result
     except Exception as e:
         return {"error": str(e)}

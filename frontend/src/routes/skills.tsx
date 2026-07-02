@@ -1,13 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/AppShell";
 import { useEffect, useState, useRef } from "react";
-import { BookOpen, Save, Cpu, FileText, Globe, Eye, Pencil, Plus, X, Trash2 } from "lucide-react";
+import { BookOpen, Save, Cpu, FileText, Eye, Pencil, Plus, X, Trash2 } from "lucide-react";
 import { marked } from "marked";
 marked.setOptions({ breaks: true, gfm: true });
 
 function stripFrontmatter(text: string): string {
   if (!text.startsWith("---")) return text;
-  // Find the closing --- of the frontmatter block (starts searching after the opening ---)
   const closeIndex = text.indexOf("---", 3);
   if (closeIndex === -1) return text;
   return text.slice(closeIndex + 3).trim();
@@ -16,32 +15,14 @@ function stripFrontmatter(text: string): string {
 export const Route = createFileRoute("/skills")({ component: SkillsEditor });
 
 const AGENT_META: Record<string, { label: string; short: string; color: string }> = {
-  skills:    { label: "Knowledge Base", short: "KB", color: "text-primary bg-primary/10 border-primary/20" },
-  shared:    { label: "Shared",         short: "SH", color: "text-info bg-info/10 border-info/20" },
-  assess:    { label: "Assess",         short: "AS", color: "text-sky-600 bg-sky-500/10 border-sky-500/20" },
-  convert:   { label: "Convert",        short: "CV", color: "text-violet-600 bg-violet-500/10 border-violet-500/20" },
-  reconcile: { label: "Reconcile",      short: "RC", color: "text-amber-600 bg-amber-500/10 border-amber-500/20" },
-  deploy:    { label: "Deploy",         short: "DP", color: "text-emerald-600 bg-emerald-500/10 border-emerald-500/20" },
+  assess_agent:    { label: "Assess",       short: "AS", color: "text-sky-600 bg-sky-500/10 border-sky-500/20" },
+  convert_agent:   { label: "Convert",      short: "CV", color: "text-violet-600 bg-violet-500/10 border-violet-500/20" },
+  reconcile_agent: { label: "Reconcile",    short: "RC", color: "text-amber-600 bg-amber-500/10 border-amber-500/20" },
+  deploy_agent:    { label: "Deploy",       short: "DP", color: "text-emerald-600 bg-emerald-500/10 border-emerald-500/20" },
+  orchestrator:    { label: "Orchestrator", short: "OR", color: "text-primary bg-primary/10 border-primary/20" },
 };
 
-const BUILTIN_SKILLS = new Set([
-  "artifact_validation.md", "complexity_classification.md", "dag_generation.md",
-  "deployment_governance.md", "graph_context.md", "hiveql_repair.md",
-  "hiveql_to_pyspark.md", "migration_flow.md", "pyspark_repair.md",
-  "repo_scan.md", "risk_assessment.md", "runtime_validation.md",
-  "semantic_comparison.md",
-]);
-
-const SKILL_DISPLAY_NAMES: Record<string, string> = {
-  graph_context:          "discovery_graph_ingestion",
-  risk_assessment:        "risk_tiering",
-  hiveql_to_pyspark:      "spark_emr_iceberg",
-  hiveql_repair:          "hive_to_athena_trino",
-  dag_generation:         "controlm_to_mwaa",
-  deployment_governance:  "sds_kms_security",
-  semantic_comparison:    "reconciliation",
-  artifact_validation:    "handover_package",
-};
+const AGENT_ORDER = ["orchestrator", "assess_agent", "convert_agent", "reconcile_agent", "deploy_agent"];
 
 const totalCount = (index: Record<string, string[]>) =>
   Object.values(index).reduce((s, a) => s + a.length, 0);
@@ -55,8 +36,9 @@ function SkillsEditor() {
   const [saved,    setSaved]    = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const [mode, setMode] = useState<"edit" | "preview">("preview");
-  const [newName, setNewName] = useState("");
+  const [mode,     setMode]     = useState<"edit" | "preview">("preview");
+  const [newAgent, setNewAgent] = useState("assess_agent");
+  const [newName,  setNewName]  = useState("");
   const [creating, setCreating] = useState(false);
 
   const dirty     = content !== original;
@@ -64,42 +46,46 @@ function SkillsEditor() {
   const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
 
   useEffect(() => {
-    fetch("/skills-api").then(r => r.json()).then(setIndex).catch(() => {});
+    fetch("/skills-api")
+      .then(r => r.json())
+      .then(d => setIndex(d.skills ?? d))
+      .catch(() => {});
   }, []);
 
-  async function select(agent: string, filename: string) {
+  async function select(agent: string, filename: string, openInEdit = false) {
     const d = await fetch(`/skills-api/${agent}/${filename}`).then(r => r.json());
     setContent(d.content);
     setOriginal(d.content);
     setSelected({ agent, filename });
     setSaved(false);
-    setMode("preview");
+    const nextMode = openInEdit ? "edit" : "preview";
+    setMode(nextMode);
+    if (openInEdit) setTimeout(() => textareaRef.current?.focus(), 50);
   }
 
   async function createSkill() {
     const raw = newName.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
     if (!raw) return;
     const filename = raw.endsWith(".md") ? raw : `${raw}.md`;
-    const initialContent = `# ${raw.replace(/_/g, " ")}\n\n`;
-    await fetch(`/skills-api/skills/${filename}`, {
+    const initialContent = `---\nname: ${raw}\ndescription: >\n  Describe what this skill teaches the agent.\n---\n\n# ${raw.replace(/_/g, " ")}\n\n`;
+    await fetch(`/skills-api/${newAgent}/${filename}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ content: initialContent }),
     });
     const updated = await fetch("/skills-api").then(r => r.json());
-    setIndex(updated);
+    setIndex(updated.skills ?? updated);
     setNewName("");
     setCreating(false);
-    await select("skills", filename);
-    setMode("edit");
+    await select(newAgent, filename, true);
   }
 
   async function deleteSkill() {
-    if (!selected || BUILTIN_SKILLS.has(selected.filename)) return;
+    if (!selected) return;
     if (!confirm(`Delete "${selected.filename}"? This cannot be undone.`)) return;
     await fetch(`/skills-api/${selected.agent}/${selected.filename}`, { method: "DELETE" });
     const updated = await fetch("/skills-api").then(r => r.json());
-    setIndex(updated);
+    setIndex(updated.skills ?? updated);
     setSelected(null);
     setContent("");
     setOriginal("");
@@ -119,12 +105,17 @@ function SkillsEditor() {
     setTimeout(() => setSaved(false), 2500);
   }
 
+  // Sort agents in defined order
+  const sortedEntries = AGENT_ORDER
+    .filter(a => index[a]?.length > 0)
+    .map(a => [a, index[a]] as [string, string[]]);
+
   return (
     <AppShell>
       <div className="h-full flex overflow-hidden bg-background">
 
         {/* ── Sidebar ─────────────────────────────────────────────────────── */}
-        <aside className="w-60 shrink-0 border-r border-border bg-white flex flex-col overflow-hidden">
+        <aside className="w-64 shrink-0 border-r border-border bg-white flex flex-col overflow-hidden">
 
           {/* Sidebar header */}
           <div className="px-4 py-4 border-b border-border shrink-0">
@@ -134,7 +125,7 @@ function SkillsEditor() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-[13px] font-semibold text-foreground leading-none">Skills</div>
-                <div className="text-[10px] text-muted-foreground font-mono mt-0.5">{totalCount(index)} files</div>
+                <div className="text-[10px] text-muted-foreground font-mono mt-0.5">{totalCount(index)} files across {Object.keys(index).length} agents</div>
               </div>
               <button
                 onClick={() => setCreating(v => !v)}
@@ -145,43 +136,50 @@ function SkillsEditor() {
               </button>
             </div>
 
-            {/* Inline new skill form */}
+            {/* New skill form */}
             {creating && (
-              <div className="mt-3 flex gap-1.5">
-                <input
-                  autoFocus
-                  value={newName}
-                  onChange={e => setNewName(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter") createSkill(); if (e.key === "Escape") { setCreating(false); setNewName(""); }}}
-                  placeholder="skill_name"
-                  className="flex-1 h-7 px-2 rounded border border-border bg-surface-2 text-[12px] font-mono focus:outline-none focus:border-primary/60 min-w-0"
-                />
-                <button
-                  onClick={createSkill}
-                  disabled={!newName.trim()}
-                  className="h-7 px-2.5 rounded bg-primary text-white text-[11px] font-medium disabled:opacity-40 hover:bg-primary/90 transition shrink-0"
+              <div className="mt-3 space-y-1.5">
+                <select
+                  value={newAgent}
+                  onChange={e => setNewAgent(e.target.value)}
+                  className="w-full h-7 px-2 rounded border border-border bg-surface-2 text-[12px] font-mono focus:outline-none focus:border-primary/60"
                 >
-                  Create
-                </button>
+                  {AGENT_ORDER.map(a => (
+                    <option key={a} value={a}>{AGENT_META[a]?.label ?? a}</option>
+                  ))}
+                </select>
+                <div className="flex gap-1.5">
+                  <input
+                    autoFocus
+                    value={newName}
+                    onChange={e => setNewName(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") createSkill(); if (e.key === "Escape") { setCreating(false); setNewName(""); }}}
+                    placeholder="skill_name"
+                    className="flex-1 h-7 px-2 rounded border border-border bg-surface-2 text-[12px] font-mono focus:outline-none focus:border-primary/60 min-w-0"
+                  />
+                  <button
+                    onClick={createSkill}
+                    disabled={!newName.trim()}
+                    className="h-7 px-2.5 rounded bg-primary text-white text-[11px] font-medium disabled:opacity-40 hover:bg-primary/90 transition shrink-0"
+                  >
+                    Create
+                  </button>
+                </div>
               </div>
             )}
           </div>
 
           {/* File tree */}
           <div className="flex-1 overflow-y-auto py-2">
-            {Object.entries(index).map(([agent, files]) => {
+            {sortedEntries.map(([agent, files]) => {
               const meta = AGENT_META[agent];
               return (
                 <div key={agent} className="mb-1">
                   {/* Agent group header */}
                   <div className="flex items-center gap-2 px-3 py-1.5 mt-1">
-                    {agent === "shared" ? (
-                      <Globe className="h-3 w-3 text-muted-foreground/60" />
-                    ) : (
-                      <span className={`inline-flex items-center justify-center h-4 w-6 rounded text-[9px] font-mono font-bold border ${meta?.color ?? ""}`}>
-                        {meta?.short ?? "??"}
-                      </span>
-                    )}
+                    <span className={`inline-flex items-center justify-center h-4 w-6 rounded text-[9px] font-mono font-bold border ${meta?.color ?? "text-muted-foreground bg-surface-2 border-border"}`}>
+                      {meta?.short ?? "??"}
+                    </span>
                     <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono font-semibold">
                       {meta?.label ?? agent}
                     </span>
@@ -191,17 +189,35 @@ function SkillsEditor() {
                   {/* Skill files */}
                   {files.map((f) => {
                     const isActive = selected?.agent === agent && selected?.filename === f;
-                    const name = SKILL_DISPLAY_NAMES[f.replace(".md", "")] ?? f.replace(".md", "");
+                    const name = f.replace(".md", "");
                     return (
-                      <button key={f} onClick={() => select(agent, f)}
-                        className={`w-full text-left flex items-center gap-2 pl-7 pr-3 py-1.5 text-[12px] font-mono transition-colors ${
-                          isActive
-                            ? "bg-primary/8 text-primary border-r-2 border-primary"
-                            : "text-foreground/60 hover:text-foreground hover:bg-surface-2 border-r-2 border-transparent"
-                        }`}>
-                        <FileText className={`h-3 w-3 shrink-0 ${isActive ? "text-primary" : "text-muted-foreground/40"}`} />
-                        <span className={isActive ? "font-medium" : ""}>{name}</span>
-                      </button>
+                      <div key={f} className={`group flex items-center gap-0 border-r-2 transition-colors ${
+                        isActive
+                          ? "bg-primary/8 border-primary"
+                          : "border-transparent hover:bg-surface-2"
+                      }`}>
+                        <button
+                          onClick={() => select(agent, f)}
+                          className="flex-1 text-left flex items-center gap-2 pl-7 pr-2 py-1.5 text-[12px] font-mono min-w-0"
+                        >
+                          <FileText className={`h-3 w-3 shrink-0 ${isActive ? "text-primary" : "text-muted-foreground/40"}`} />
+                          <span className={`truncate ${isActive ? "text-primary font-medium" : "text-foreground/60 group-hover:text-foreground"}`}>
+                            {name}
+                          </span>
+                        </button>
+                        {/* Edit icon — visible on hover or when active */}
+                        <button
+                          onClick={() => select(agent, f, true)}
+                          title="Edit"
+                          className={`h-6 w-6 rounded mr-1.5 flex items-center justify-center flex-shrink-0 transition-colors
+                            ${isActive && mode === "edit"
+                              ? "bg-primary/15 text-primary"
+                              : "text-muted-foreground/30 hover:text-primary hover:bg-primary/10 opacity-0 group-hover:opacity-100"
+                            }`}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -219,7 +235,7 @@ function SkillsEditor() {
               </div>
               <div className="text-center">
                 <p className="text-[14px] font-medium text-foreground/60">No skill selected</p>
-                <p className="text-[12px] mt-0.5">Pick a file from the sidebar</p>
+                <p className="text-[12px] mt-0.5">Pick a file from the sidebar, or click the pencil to edit directly</p>
               </div>
             </div>
           ) : (
@@ -238,10 +254,11 @@ function SkillsEditor() {
                   )}
                 </div>
 
-                {/* Edit / Preview toggle */}
+                {/* Preview / Edit toggle */}
                 <div className="flex items-center gap-0.5 border border-border rounded-md p-0.5 bg-surface-2/50">
                   {(["preview", "edit"] as const).map((m) => (
-                    <button key={m} onClick={() => { setMode(m); if (m === "edit") setTimeout(() => textareaRef.current?.focus(), 50); }}
+                    <button key={m}
+                      onClick={() => { setMode(m); if (m === "edit") setTimeout(() => textareaRef.current?.focus(), 50); }}
                       className={`inline-flex items-center gap-1.5 h-6 px-2.5 rounded text-[11px] font-medium transition ${
                         mode === m ? "bg-white shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                       }`}>
@@ -251,20 +268,18 @@ function SkillsEditor() {
                   ))}
                 </div>
 
-                {/* Cmd+S hint */}
                 {mode === "edit" && dirty && !saving && (
                   <span className="text-[11px] font-mono text-muted-foreground/50 hidden sm:block">⌘S</span>
                 )}
 
-                {/* Delete (user-created only) */}
-                {selected && !BUILTIN_SKILLS.has(selected.filename) && (
-                  <button onClick={deleteSkill}
-                    className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium text-danger/60 hover:text-danger hover:bg-danger/8 border border-transparent hover:border-danger/20 transition shrink-0">
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                )}
+                {/* Delete */}
+                <button onClick={deleteSkill}
+                  className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium text-danger/50 hover:text-danger hover:bg-danger/8 border border-transparent hover:border-danger/20 transition shrink-0"
+                  title="Delete skill">
+                  <Trash2 className="h-3 w-3" />
+                </button>
 
-                {/* Save button */}
+                {/* Save */}
                 <button onClick={save} disabled={!dirty || saving}
                   className={`inline-flex items-center gap-1.5 h-7 px-3 rounded-md text-[12px] font-medium transition shrink-0 ${
                     saved  ? "bg-success/10 text-success border border-success/30" :
@@ -321,12 +336,8 @@ function SkillsEditor() {
                   {lineCount} lines · {wordCount} words
                 </span>
                 <span className="text-[11px] font-mono text-muted-foreground/60">Markdown</span>
-                {dirty && (
-                  <span className="text-[11px] font-mono text-warning ml-auto">Unsaved changes</span>
-                )}
-                {saved && (
-                  <span className="text-[11px] font-mono text-success ml-auto">Saved</span>
-                )}
+                {dirty && <span className="text-[11px] font-mono text-warning ml-auto">Unsaved changes</span>}
+                {saved && <span className="text-[11px] font-mono text-success ml-auto">Saved</span>}
               </div>
             </>
           )}
